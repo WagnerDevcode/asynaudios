@@ -1,0 +1,106 @@
+:root {
+  --bg-color: #1e1e24;
+  --text-color: #fff;
+  --primary: #9b59b6;
+  --secondary: #2ecc71;
+  --panel-bg: #2b2b36;
+}
+
+body {
+  font-family: "Segoe UI", Tahoma, Geneva, Verdana, sans-serif;
+  background-color: var(--bg-color);
+  color: var(--text-color);
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  height: 100vh;
+  margin: 0;
+}
+
+.container {
+  background: var(--panel-bg);
+  padding: 30px;
+  border-radius: 12px;
+  box-shadow: 0 8px 20px rgba(0, 0, 0, 0.4);
+  text-align: center;
+  width: 100%;
+  max-width: 420px;
+}
+
+.panel {
+  display: none;
+  flex-direction: column;
+  gap: 15px;
+  margin-top: 20px;
+}
+
+.panel.active {
+  display: flex;
+}
+
+.input-group {
+  text-align: left;
+  margin-bottom: 10px;
+}
+
+.input-group label {
+  display: block;
+  margin-bottom: 5px;
+  font-size: 14px;
+  color: #ccc;
+}
+
+input[type="text"],
+input[type="file"] {
+  width: 100%;
+  padding: 10px;
+  border: 1px solid #444;
+  border-radius: 6px;
+  background: #3b3b4a;
+  color: white;
+  box-sizing: border-box;
+}
+
+.btn {
+  padding: 12px 20px;
+  border: none;
+  border-radius: 8px;
+  font-size: 16px;
+  font-weight: bold;
+  cursor: pointer;
+  transition: opacity 0.3s;
+  color: white;
+  width: 100%;
+}
+
+.btn:hover {
+  opacity: 0.8;
+}
+.btn:disabled {
+  background: #555;
+  cursor: not-allowed;
+}
+.btn.primary {
+  background-color: var(--primary);
+}
+.btn.secondary {
+  background-color: var(--secondary);
+}
+
+.status {
+  font-size: 14px;
+  color: #bdc3c7;
+  min-height: 20px;
+}
+
+.highlight {
+  font-weight: bold;
+  color: var(--secondary);
+  font-size: 18px;
+}
+
+audio {
+  width: 100%;
+  margin-top: 10px;
+  border-radius: 6px;
+}

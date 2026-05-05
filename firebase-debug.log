@@ -1,0 +1,28 @@
+[debug] [2026-05-05T01:56:41.864Z] ----------------------------------------------------------------------
+[debug] [2026-05-05T01:56:41.872Z] Command:       C:\Program Files\nodejs\node.exe C:\Users\wagnercode\AppData\Roaming\npm\node_modules\firebase-tools\lib\bin\firebase.js init
+[debug] [2026-05-05T01:56:41.873Z] CLI Version:   15.16.0
+[debug] [2026-05-05T01:56:41.873Z] Platform:      win32
+[debug] [2026-05-05T01:56:41.873Z] Node Version:  v20.14.0
+[debug] [2026-05-05T01:56:41.874Z] Time:          Mon May 04 2026 22:56:41 GMT-0300 (Horário Padrão de Brasília)
+[debug] [2026-05-05T01:56:41.874Z] ----------------------------------------------------------------------
+[debug] 
+[info] 
+     ######## #### ########  ######## ########     ###     ######  ########
+     ##        ##  ##     ## ##       ##     ##  ##   ##  ##       ##
+     ######    ##  ########  ######   ########  #########  ######  ######
+     ##        ##  ##    ##  ##       ##     ## ##     ##       ## ##
+     ##       #### ##     ## ######## ########  ##     ##  ######  ########
+
+You're about to initialize a Firebase project in this directory:
+
+  C:\Users\wagnercode\Desktop\audiosync
+
+[info] 
+=== Project Setup
+[info] 
+[info] First, let's associate this project directory with a Firebase project.
+[info] You can create multiple project aliases by running firebase use --add, 
+[info] 
+[info] i  If you want to create a project in a Google Cloud organization or folder, please use "firebase projects:create" instead, and return to this command when you've created the project. 
+[debug] [2026-05-05T01:57:15.216Z] > command requires scopes: ["email","openid","https://www.googleapis.com/auth/cloudplatformprojects.readonly","https://www.googleapis.com/auth/firebase","https://www.googleapis.com/auth/cloud-platform"]
+[debug] [2026-05-05T01:57:15.217Z] > authorizing via signed-in user (wagnerdevcode@gmail.com)

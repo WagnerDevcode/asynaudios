@@ -1,0 +1,78 @@
+<!doctype html>
+<html lang="pt-br">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Reprodutor de Música Compartilhado</title>
+    <link rel="stylesheet" href="styles.css" />
+  </head>
+  <body>
+    <div class="container">
+      <h1>🎵 Sync Music</h1>
+
+      <div id="role-selection" class="panel active">
+        <h2>Como você quer entrar?</h2>
+        <button id="btn-central" class="btn primary">
+          Criar Sala (Transmitir Música)
+        </button>
+        <button id="btn-ouvinte" class="btn secondary">
+          Entrar em uma Sala (Ouvir)
+        </button>
+      </div>
+
+      <!-- Painel da Central -->
+      <div id="central-panel" class="panel">
+        <h2>📻 Sala de Transmissão</h2>
+
+        <div class="input-group">
+          <label>1. Escolha a música (MP3):</label>
+          <input type="file" id="audio-file" accept="audio/*" />
+        </div>
+
+        <audio id="central-audio" controls></audio>
+
+        <div class="input-group">
+          <label>2. Código da sua sala:</label>
+          <input
+            type="text"
+            id="central-room-code"
+            placeholder="Ex: FESTA24"
+            autocomplete="off"
+          />
+        </div>
+
+        <button id="btn-start-broadcast" class="btn primary">
+          Iniciar Transmissão
+        </button>
+
+        <p>
+          Ouvintes conectados:
+          <span id="listener-count" class="highlight">0</span>
+        </p>
+        <p id="central-status" class="status"></p>
+      </div>
+
+      <!-- Painel do Ouvinte -->
+      <div id="ouvinte-panel" class="panel">
+        <h2>🎧 Conectar na Sala</h2>
+
+        <div class="input-group">
+          <label>Código da Sala:</label>
+          <input
+            type="text"
+            id="ouvinte-room-code"
+            placeholder="Digite o código"
+            autocomplete="off"
+          />
+        </div>
+
+        <button id="btn-connect" class="btn secondary">Conectar e Ouvir</button>
+
+        <p id="ouvinte-status" class="status"></p>
+        <audio id="remote-audio" autoplay controls></audio>
+      </div>
+    </div>
+
+    <script type="module" src="app.js"></script>
+  </body>
+</html>
