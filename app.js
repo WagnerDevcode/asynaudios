@@ -7,213 +7,190 @@ import {
   push,
   onChildAdded,
 } from "https://www.gstatic.com/firebasejs/10.8.1/firebase-database.js";
+import {
+  getStorage,
+  ref as sRef,
+  uploadBytesResumable,
+  getDownloadURL,
+  listAll,
+} from "https://www.gstatic.com/firebasejs/10.8.1/firebase-storage.js";
 
-// ==========================================
-// 1. CONFIGURAÇÃO DO FIREBASE (Coloque as suas!)
-// ==========================================
+// CONFIGURAÇÃO DO SEU FIREBASE
 const firebaseConfig = {
   apiKey: "AIzaSyAF3hKJI1t8NfKvRuWJGf3jFvJtBMICPQY",
   authDomain: "audiosicronizad.firebaseapp.com",
-  databaseURL: "https://audiosicronizad-default-rtdb.firebaseio.com", // Adicione esta linha
+  databaseURL: "https://audiosicronizad-default-rtdb.firebaseio.com",
   projectId: "audiosicronizad",
   storageBucket: "audiosicronizad.firebasestorage.app",
   messagingSenderId: "225394954367",
   appId: "1:225394954367:web:f46491f155dce8415def4a",
-  measurementId: "G-D23W05E5F5",
 };
 
 const app = initializeApp(firebaseConfig);
 const db = getDatabase(app);
-
+const storage = getStorage(app);
 const rtcConfig = { iceServers: [{ urls: "stun:stun.l.google.com:19302" }] };
 
-// ==========================================
-// 2. CONTROLE DE INTERFACE (UI)
-// ==========================================
-const panels = {
-  selection: document.getElementById("role-selection"),
-  central: document.getElementById("central-panel"),
-  ouvinte: document.getElementById("ouvinte-panel"),
-};
+// UI Elements
+const centralAudio = document.getElementById("central-audio");
+const roomInput = document.getElementById("room-code-input");
+const statusDisplay = document.getElementById("status-display");
 
-document
-  .getElementById("btn-central")
-  .addEventListener("click", () => showPanel("central"));
-document
-  .getElementById("btn-ouvinte")
-  .addEventListener("click", () => showPanel("ouvinte"));
+// alternar painéis
+document.getElementById("btn-central").onclick = () => switchTab("central");
+document.getElementById("btn-ouvinte").onclick = () => switchTab("ouvinte");
 
-function showPanel(role) {
-  Object.values(panels).forEach((p) => p.classList.remove("active"));
-  panels[role].classList.add("active");
+function switchTab(role) {
+  document
+    .querySelectorAll(".nav-item")
+    .forEach((b) => b.classList.remove("active"));
+  document
+    .querySelectorAll(".content-section")
+    .forEach((s) => s.classList.remove("active"));
+  document.getElementById(`btn-${role}`).classList.add("active");
+  document.getElementById(`${role}-panel`).classList.add("active");
 }
 
-// Carregar música local no player da Central
-const audioFileInput = document.getElementById("audio-file");
-const centralAudioPlayer = document.getElementById("central-audio");
-
-audioFileInput.addEventListener("change", (e) => {
+// ---------------------------
+// LOGICA DE UPLOAD E PLAYLIST
+// ---------------------------
+const fileInput = document.getElementById("upload-file");
+fileInput.onchange = (e) => {
   const file = e.target.files[0];
-  if (file) {
-    centralAudioPlayer.src = URL.createObjectURL(file);
+  const room = roomInput.value.toUpperCase();
+  if (!room) return alert("Digite o código da sala!");
+
+  const sPath = sRef(storage, `salas/${room}/${file.name}`);
+  const uploadTask = uploadBytesResumable(sPath, file);
+
+  document.getElementById("progress-wrapper").style.display = "block";
+
+  uploadTask.on(
+    "state_changed",
+    (snap) => {
+      const p = (snap.bytesTransferred / snap.totalBytes) * 100;
+      document.getElementById("upload-progress-fill").style.width = p + "%";
+    },
+    null,
+    () => {
+      document.getElementById("progress-wrapper").style.display = "none";
+      loadPlaylist(room);
+    },
+  );
+};
+
+async function loadPlaylist(room) {
+  const listRef = sRef(storage, `salas/${room}`);
+  const playlistUl = document.getElementById("playlist");
+  playlistUl.innerHTML = "";
+
+  try {
+    const res = await listAll(listRef);
+    res.items.forEach(async (item) => {
+      const url = await getDownloadURL(item);
+      const li = document.createElement("li");
+      li.innerHTML = `<span><i class="fas fa-music"></i> ${item.name}</span> <i class="fas fa-play-circle"></i>`;
+      li.onclick = () => {
+        centralAudio.src = url;
+        document.getElementById("current-track-name").innerText = item.name;
+        centralAudio.play();
+        updateTracks(); // Sincroniza nova música com ouvintes
+      };
+      playlistUl.appendChild(li);
+    });
+  } catch (e) {
+    console.error("Erro ao listar musicas", e);
   }
-});
+}
 
-// ==========================================
-// 3. LÓGICA DA CENTRAL (TRANSMITIR MÚSICA)
-// ==========================================
-let audioStream;
-let peerConnections = {};
+// ---------------------------
+// LOGICA DE TRANSMISSÃO (WebRTC)
+// ---------------------------
+let localStream;
+let peers = {};
 
-document
-  .getElementById("btn-start-broadcast")
-  .addEventListener("click", async () => {
-    const roomCode = document
-      .getElementById("central-room-code")
-      .value.trim()
-      .toUpperCase();
-    const statusText = document.getElementById("central-status");
+document.getElementById("btn-start-broadcast").onclick = async () => {
+  const room = roomInput.value.toUpperCase();
+  if (!room) return alert("Código da sala vazio!");
 
-    if (!roomCode || !centralAudioPlayer.src) {
-      alert("Escolha uma música e digite um código de sala!");
-      return;
-    }
+  localStream = centralAudio.captureStream
+    ? centralAudio.captureStream()
+    : centralAudio.mozCaptureStream();
+  statusDisplay.innerText = "LIVE ATIVA";
+  statusDisplay.className = "status-online";
 
-    try {
-      // Pega o fluxo de áudio diretamente do reprodutor <audio>
-      const captureStream =
-        centralAudioPlayer.captureStream || centralAudioPlayer.mozCaptureStream;
-      audioStream = captureStream.call(centralAudioPlayer);
-
-      // Exige que o áudio tenha pelo menos uma trilha
-      if (audioStream.getAudioTracks().length === 0) {
-        // Em alguns navegadores, é preciso dar 'play' primeiro para a trilha existir
-        centralAudioPlayer.play();
-        audioStream = captureStream.call(centralAudioPlayer);
-      }
-
-      statusText.innerText = `Sala ${roomCode} criada! Aguardando ouvintes...`;
-      document.getElementById("btn-start-broadcast").disabled = true;
-
-      // Fica escutando novos ouvintes entrarem na SALA ESPECÍFICA
-      const listenersRef = ref(db, `salas/${roomCode}/ouvintes`);
-      onChildAdded(listenersRef, async (snapshot) => {
-        const listenerId = snapshot.key;
-        createPeerConnectionForListener(listenerId, roomCode);
-      });
-    } catch (error) {
-      statusText.innerText = "Erro ao capturar áudio da música.";
-      console.error(error);
-    }
+  onChildAdded(ref(db, `salas/${room}/listeners`), (snap) => {
+    initPeer(snap.key, room);
   });
 
-async function createPeerConnectionForListener(listenerId, roomCode) {
+  loadPlaylist(room);
+};
+
+async function initPeer(userId, room) {
   const pc = new RTCPeerConnection(rtcConfig);
-  peerConnections[listenerId] = pc;
+  peers[userId] = pc;
 
-  // Envia a música para a conexão
-  audioStream.getTracks().forEach((track) => pc.addTrack(track, audioStream));
+  localStream.getTracks().forEach((t) => pc.addTrack(t, localStream));
 
-  pc.onicecandidate = (event) => {
-    if (event.candidate) {
-      push(
-        ref(db, `salas/${roomCode}/signaling/${listenerId}/candidates/central`),
-        event.candidate.toJSON(),
+  pc.onicecandidate = (e) => {
+    if (e.candidate)
+      set(
+        push(ref(db, `salas/${room}/sig/${userId}/c_central`)),
+        e.candidate.toJSON(),
       );
-    }
   };
 
   const offer = await pc.createOffer();
   await pc.setLocalDescription(offer);
-
-  await set(ref(db, `salas/${roomCode}/signaling/${listenerId}/offer`), {
+  set(ref(db, `salas/${room}/sig/${userId}/offer`), {
     type: offer.type,
     sdp: offer.sdp,
   });
 
-  onValue(
-    ref(db, `salas/${roomCode}/signaling/${listenerId}/answer`),
-    (snapshot) => {
-      const answer = snapshot.val();
-      if (answer && !pc.currentRemoteDescription) {
-        pc.setRemoteDescription(new RTCSessionDescription(answer));
-      }
-    },
-  );
-
-  onChildAdded(
-    ref(db, `salas/${roomCode}/signaling/${listenerId}/candidates/ouvinte`),
-    (snapshot) => {
-      const candidate = new RTCIceCandidate(snapshot.val());
-      pc.addIceCandidate(candidate);
-    },
-  );
-
-  document.getElementById("listener-count").innerText =
-    Object.keys(peerConnections).length;
+  onValue(ref(db, `salas/${room}/sig/${userId}/answer`), (snap) => {
+    if (snap.exists())
+      pc.setRemoteDescription(new RTCSessionDescription(snap.val()));
+  });
 }
 
-// ==========================================
-// 4. LÓGICA DO OUVINTE (RECEPTOR)
-// ==========================================
-document.getElementById("btn-connect").addEventListener("click", async () => {
-  const roomCode = document
-    .getElementById("ouvinte-room-code")
-    .value.trim()
-    .toUpperCase();
-  const statusText = document.getElementById("ouvinte-status");
-  const remoteAudio = document.getElementById("remote-audio");
+function updateTracks() {
+  const newTrack = localStream.getAudioTracks()[0];
+  Object.values(peers).forEach((pc) => {
+    const sender = pc.getSenders().find((s) => s.track.kind === "audio");
+    if (sender) sender.replaceTrack(newTrack);
+  });
+}
 
-  if (!roomCode) {
-    alert("Digite o código da sala!");
-    return;
-  }
-
-  const myId = "ouvinte_" + Math.random().toString(36).substr(2, 9);
+// ---------------------------
+// LOGICA DO OUVINTE
+// ---------------------------
+document.getElementById("btn-connect").onclick = async () => {
+  const room = roomInput.value.toUpperCase();
+  const myId = "user_" + Math.floor(Math.random() * 1000);
   const pc = new RTCPeerConnection(rtcConfig);
 
-  // Quando o áudio da Central chegar, toca no reprodutor
-  pc.ontrack = (event) => {
-    remoteAudio.srcObject = event.streams[0];
-    statusText.innerText = "Conectado! Reproduzindo música...";
-  };
+  pc.ontrack = (e) =>
+    (document.getElementById("remote-audio").srcObject = e.streams[0]);
 
-  pc.onicecandidate = (event) => {
-    if (event.candidate) {
-      push(
-        ref(db, `salas/${roomCode}/signaling/${myId}/candidates/ouvinte`),
-        event.candidate.toJSON(),
+  pc.onicecandidate = (e) => {
+    if (e.candidate)
+      set(
+        push(ref(db, `salas/${room}/sig/${myId}/c_ouvinte`)),
+        e.candidate.toJSON(),
       );
-    }
   };
 
-  // Avisa a Central que entrei na sala
-  await set(ref(db, `salas/${roomCode}/ouvintes/${myId}`), true);
-  statusText.innerText = "Conectando à sala...";
+  await set(ref(db, `salas/${room}/listeners/${myId}`), true);
 
-  onValue(
-    ref(db, `salas/${roomCode}/signaling/${myId}/offer`),
-    async (snapshot) => {
-      const offer = snapshot.val();
-      if (offer && !pc.currentRemoteDescription) {
-        await pc.setRemoteDescription(new RTCSessionDescription(offer));
-
-        const answer = await pc.createAnswer();
-        await pc.setLocalDescription(answer);
-
-        await set(ref(db, `salas/${roomCode}/signaling/${myId}/answer`), {
-          type: answer.type,
-          sdp: answer.sdp,
-        });
-      }
-    },
-  );
-
-  onChildAdded(
-    ref(db, `salas/${roomCode}/signaling/${myId}/candidates/central`),
-    (snapshot) => {
-      const candidate = new RTCIceCandidate(snapshot.val());
-      pc.addIceCandidate(candidate);
-    },
-  );
-});
+  onValue(ref(db, `salas/${room}/sig/${myId}/offer`), async (snap) => {
+    if (snap.exists()) {
+      await pc.setRemoteDescription(new RTCSessionDescription(snap.val()));
+      const ans = await pc.createAnswer();
+      await pc.setLocalDescription(ans);
+      set(ref(db, `salas/${room}/sig/${myId}/answer`), {
+        type: ans.type,
+        sdp: ans.sdp,
+      });
+    }
+  });
+};
