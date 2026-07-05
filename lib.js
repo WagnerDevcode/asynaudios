@@ -85,6 +85,15 @@ export function playlistJson(epoch, tracks) {
   return JSON.stringify(out, null, 2);
 }
 
+// Return a new tracks array with the entry at `index` removed. Out-of-range
+// indices leave the list unchanged (returned as a copy).
+export function removeTrackAt(tracks, index) {
+  const list = [...(tracks || [])];
+  if (index < 0 || index >= list.length) return list;
+  list.splice(index, 1);
+  return list;
+}
+
 // Playback offset (seconds) implied by a now-playing state at the given shared
 // time. If paused, the offset is frozen; otherwise it advances from the moment
 // the state was captured (`at`).

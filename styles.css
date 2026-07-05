@@ -113,6 +113,32 @@ body {
   color: var(--text-main);
 }
 
+.music-list li span {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.btn-track-del {
+  background: transparent;
+  border: none;
+  color: var(--text-dim, #9a9aa2);
+  cursor: pointer;
+  padding: 4px 8px;
+  border-radius: 6px;
+  opacity: 0;
+  transition: opacity 0.15s ease, color 0.15s ease, background 0.15s ease;
+}
+
+.music-list li:hover .btn-track-del {
+  opacity: 1;
+}
+
+.btn-track-del:hover {
+  color: #ff6b6b;
+  background: rgba(255, 107, 107, 0.12);
+}
+
 /* Upload area */
 .upload-area {
   margin-top: 16px;

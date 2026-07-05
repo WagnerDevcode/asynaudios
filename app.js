@@ -7,6 +7,7 @@ import {
   roleFromLocation,
   playlistJson,
   remoteOffset,
+  removeTrackAt,
   ghContentsApiUrl,
   buildNowPlaying,
   switchTab,
@@ -116,6 +117,23 @@ async function ghGetFile(path) {
   return res.json();
 }
 
+async function ghDeleteFile(path, message, sha) {
+  const c = ghConfig();
+  const body = { message, sha };
+  if (c.branch) body.branch = c.branch;
+  const res = await fetch(ghContentsApiUrl(c.owner, c.repo, path), {
+    method: "DELETE",
+    headers: {
+      Authorization: `Bearer ${c.token}`,
+      Accept: "application/vnd.github+json",
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify(body),
+  });
+  if (!res.ok) throw new Error(`GitHub DELETE ${path}: ${res.status}`);
+  return res.json();
+}
+
 async function ghPutFile(path, base64Content, message, sha) {
   const c = ghConfig();
   const body = { message, content: base64Content };
@@ -220,9 +238,66 @@ function renderPlaylist() {
   list.forEach((t, i) => {
     const li = document.createElement("li");
     li.innerHTML = buildPlaylistItemMarkup(t.local ? `${t.name} (local)` : t.name);
-    if (!listenerMode) li.onclick = () => playTrack(i);
+    if (!listenerMode) {
+      li.onclick = () => playTrack(i);
+      const del = document.createElement("button");
+      del.className = "btn-track-del";
+      del.type = "button";
+      del.title = "Excluir faixa";
+      del.setAttribute("aria-label", `Excluir ${t.name}`);
+      del.innerHTML = '<i class="fas fa-trash"></i>';
+      del.onclick = (ev) => {
+        ev.stopPropagation();
+        deleteTrack(i);
+      };
+      li.appendChild(del);
+    }
     playlistUl.appendChild(li);
   });
+  highlightCurrent(currentIndex);
+}
+
+// Central: remove a track from the station. Synced tracks are deleted from the
+// repo (MP3 + playlist.json entry) so listeners stop seeing them; local-only
+// uploads are just dropped from this device.
+async function deleteTrack(displayIndex) {
+  if (listenerMode) return;
+  const list = allTracks();
+  const track = list[displayIndex];
+  if (!track) return;
+  const isLocal = displayIndex >= syncTracks.length;
+
+  if (isLocal) {
+    localTracks = removeTrackAt(localTracks, displayIndex - syncTracks.length);
+  } else if (ghConfigured()) {
+    try {
+      setGhStatus(`Excluindo ${track.name}…`);
+      const existing = await ghGetFile(track.url);
+      if (existing && existing.sha) {
+        await ghDeleteFile(track.url, `remove track ${track.name}`, existing.sha);
+      }
+      syncTracks = removeTrackAt(syncTracks, displayIndex);
+      await updatePlaylistFile();
+      setGhStatus(`${track.name} removida do repositório`);
+    } catch (err) {
+      console.error(err);
+      setGhStatus(`Erro ao remover ${track.name}: ${err.message}`);
+      return;
+    }
+  } else {
+    syncTracks = removeTrackAt(syncTracks, displayIndex);
+  }
+
+  if (displayIndex === currentIndex) {
+    audio.pause();
+    audio.removeAttribute("src");
+    audio.load();
+    currentIndex = -1;
+    trackName.innerText = "Nenhuma faixa";
+  } else if (displayIndex < currentIndex) {
+    currentIndex -= 1;
+  }
+  renderPlaylist();
 }
 
 function readDuration(url) {

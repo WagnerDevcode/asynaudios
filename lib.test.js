@@ -8,6 +8,7 @@ import {
   roleFromLocation,
   playlistJson,
   remoteOffset,
+  removeTrackAt,
   ghContentsApiUrl,
   buildNowPlaying,
   switchTab,
@@ -166,6 +167,20 @@ describe("playlistJson", () => {
     expect(parsed.tracks).toEqual([]);
     const parsed2 = JSON.parse(playlistJson(0, [{ name: "x", url: "x.mp3" }]));
     expect(parsed2.tracks[0].duration).toBe(0);
+  });
+});
+
+describe("removeTrackAt", () => {
+  it("removes the entry at the index and returns a new array", () => {
+    const out = removeTrackAt(TRACKS, 1);
+    expect(out.map((t) => t.name)).toEqual(["A", "C"]);
+    expect(TRACKS.length).toBe(3); // original untouched
+  });
+
+  it("returns an unchanged copy for out-of-range or empty input", () => {
+    expect(removeTrackAt(TRACKS, -1).map((t) => t.name)).toEqual(["A", "B", "C"]);
+    expect(removeTrackAt(TRACKS, 9).map((t) => t.name)).toEqual(["A", "B", "C"]);
+    expect(removeTrackAt(null, 0)).toEqual([]);
   });
 });
 
