@@ -1,0 +1,16 @@
+# Firebase
+firebase-debug.log
+firebase-debug.*.log
+.firebase/
+.runtimeconfig.json
+
+# Environment / secrets
+.env
+.env.*
+*.local
+
+# Dependencies
+node_modules/
+
+# OS / editor
+.DS_Store
