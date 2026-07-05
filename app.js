@@ -4,7 +4,6 @@ import {
   ref,
   set,
   onValue,
-  push,
   onChildAdded,
 } from "https://www.gstatic.com/firebasejs/10.8.1/firebase-database.js";
 import {
@@ -14,6 +13,15 @@ import {
   getDownloadURL,
   listAll,
 } from "https://www.gstatic.com/firebasejs/10.8.1/firebase-storage.js";
+import {
+  $,
+  getRoomCode,
+  requireRoom,
+  signalPath,
+  relayIceCandidates,
+  createPeerConnection,
+  applyRemoteDescription,
+} from "./utils.js";
 
 // CONFIGURAÇÃO DO SEU FIREBASE
 const firebaseConfig = {
@@ -32,13 +40,13 @@ const storage = getStorage(app);
 const rtcConfig = { iceServers: [{ urls: "stun:stun.l.google.com:19302" }] };
 
 // UI Elements
-const centralAudio = document.getElementById("central-audio");
-const roomInput = document.getElementById("room-code-input");
-const statusDisplay = document.getElementById("status-display");
+const centralAudio = $("central-audio");
+const roomInput = $("room-code-input");
+const statusDisplay = $("status-display");
 
 // alternar painéis
-document.getElementById("btn-central").onclick = () => switchTab("central");
-document.getElementById("btn-ouvinte").onclick = () => switchTab("ouvinte");
+$("btn-central").onclick = () => switchTab("central");
+$("btn-ouvinte").onclick = () => switchTab("ouvinte");
 
 function switchTab(role) {
   document
@@ -47,33 +55,33 @@ function switchTab(role) {
   document
     .querySelectorAll(".content-section")
     .forEach((s) => s.classList.remove("active"));
-  document.getElementById(`btn-${role}`).classList.add("active");
-  document.getElementById(`${role}-panel`).classList.add("active");
+  $(`btn-${role}`).classList.add("active");
+  $(`${role}-panel`).classList.add("active");
 }
 
 // ---------------------------
 // LOGICA DE UPLOAD E PLAYLIST
 // ---------------------------
-const fileInput = document.getElementById("upload-file");
+const fileInput = $("upload-file");
 fileInput.onchange = (e) => {
   const file = e.target.files[0];
-  const room = roomInput.value.toUpperCase();
-  if (!room) return alert("Digite o código da sala!");
+  const room = requireRoom(roomInput);
+  if (!room) return;
 
   const sPath = sRef(storage, `salas/${room}/${file.name}`);
   const uploadTask = uploadBytesResumable(sPath, file);
 
-  document.getElementById("progress-wrapper").style.display = "block";
+  $("progress-wrapper").style.display = "block";
 
   uploadTask.on(
     "state_changed",
     (snap) => {
       const p = (snap.bytesTransferred / snap.totalBytes) * 100;
-      document.getElementById("upload-progress-fill").style.width = p + "%";
+      $("upload-progress-fill").style.width = p + "%";
     },
     null,
     () => {
-      document.getElementById("progress-wrapper").style.display = "none";
+      $("progress-wrapper").style.display = "none";
       loadPlaylist(room);
     },
   );
@@ -81,7 +89,7 @@ fileInput.onchange = (e) => {
 
 async function loadPlaylist(room) {
   const listRef = sRef(storage, `salas/${room}`);
-  const playlistUl = document.getElementById("playlist");
+  const playlistUl = $("playlist");
   playlistUl.innerHTML = "";
 
   try {
@@ -92,7 +100,7 @@ async function loadPlaylist(room) {
       li.innerHTML = `<span><i class="fas fa-music"></i> ${item.name}</span> <i class="fas fa-play-circle"></i>`;
       li.onclick = () => {
         centralAudio.src = url;
-        document.getElementById("current-track-name").innerText = item.name;
+        $("current-track-name").innerText = item.name;
         centralAudio.play();
         updateTracks(); // Sincroniza nova música com ouvintes
       };
@@ -109,9 +117,9 @@ async function loadPlaylist(room) {
 let localStream;
 let peers = {};
 
-document.getElementById("btn-start-broadcast").onclick = async () => {
-  const room = roomInput.value.toUpperCase();
-  if (!room) return alert("Código da sala vazio!");
+$("btn-start-broadcast").onclick = async () => {
+  const room = requireRoom(roomInput, "Código da sala vazio!");
+  if (!room) return;
 
   localStream = centralAudio.captureStream
     ? centralAudio.captureStream()
@@ -127,29 +135,22 @@ document.getElementById("btn-start-broadcast").onclick = async () => {
 };
 
 async function initPeer(userId, room) {
-  const pc = new RTCPeerConnection(rtcConfig);
+  const pc = createPeerConnection(rtcConfig);
   peers[userId] = pc;
 
   localStream.getTracks().forEach((t) => pc.addTrack(t, localStream));
 
-  pc.onicecandidate = (e) => {
-    if (e.candidate)
-      set(
-        push(ref(db, `salas/${room}/sig/${userId}/c_central`)),
-        e.candidate.toJSON(),
-      );
-  };
+  relayIceCandidates(pc, db, signalPath(room, userId, "c_central"));
 
   const offer = await pc.createOffer();
   await pc.setLocalDescription(offer);
-  set(ref(db, `salas/${room}/sig/${userId}/offer`), {
+  set(ref(db, signalPath(room, userId, "offer")), {
     type: offer.type,
     sdp: offer.sdp,
   });
 
-  onValue(ref(db, `salas/${room}/sig/${userId}/answer`), (snap) => {
-    if (snap.exists())
-      pc.setRemoteDescription(new RTCSessionDescription(snap.val()));
+  onValue(ref(db, signalPath(room, userId, "answer")), (snap) => {
+    if (snap.exists()) applyRemoteDescription(pc, snap);
   });
 }
 
@@ -164,30 +165,23 @@ function updateTracks() {
 // ---------------------------
 // LOGICA DO OUVINTE
 // ---------------------------
-document.getElementById("btn-connect").onclick = async () => {
-  const room = roomInput.value.toUpperCase();
+$("btn-connect").onclick = async () => {
+  const room = getRoomCode(roomInput);
   const myId = "user_" + Math.floor(Math.random() * 1000);
-  const pc = new RTCPeerConnection(rtcConfig);
+  const pc = createPeerConnection(rtcConfig);
 
-  pc.ontrack = (e) =>
-    (document.getElementById("remote-audio").srcObject = e.streams[0]);
+  pc.ontrack = (e) => ($("remote-audio").srcObject = e.streams[0]);
 
-  pc.onicecandidate = (e) => {
-    if (e.candidate)
-      set(
-        push(ref(db, `salas/${room}/sig/${myId}/c_ouvinte`)),
-        e.candidate.toJSON(),
-      );
-  };
+  relayIceCandidates(pc, db, signalPath(room, myId, "c_ouvinte"));
 
   await set(ref(db, `salas/${room}/listeners/${myId}`), true);
 
-  onValue(ref(db, `salas/${room}/sig/${myId}/offer`), async (snap) => {
+  onValue(ref(db, signalPath(room, myId, "offer")), async (snap) => {
     if (snap.exists()) {
-      await pc.setRemoteDescription(new RTCSessionDescription(snap.val()));
+      await applyRemoteDescription(pc, snap);
       const ans = await pc.createAnswer();
       await pc.setLocalDescription(ans);
-      set(ref(db, `salas/${room}/sig/${myId}/answer`), {
+      set(ref(db, signalPath(room, myId, "answer")), {
         type: ans.type,
         sdp: ans.sdp,
       });
