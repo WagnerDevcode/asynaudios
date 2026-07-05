@@ -142,19 +142,24 @@ function sync() {
   trackTime.innerText = `${formatTime(slot.offset)} / ${formatTime(dur)}`;
 }
 
-joinBtn.onclick = async () => {
+// Join the shared schedule and start playing. Returns false if the browser
+// blocked autoplay (needs a user gesture).
+async function startListening() {
   started = true;
   manualMode = false; // rejoin the shared schedule
   statusDisplay.innerText = "SINCRONIZADO";
   statusDisplay.className = "status-online";
-  currentIndex = -1; // force (re)load + play under the user gesture
+  currentIndex = -1; // force (re)load + play
   sync();
   try {
     await audio.play();
+    return true;
   } catch {
-    /* will retry on next sync tick */
+    return false;
   }
-};
+}
+
+joinBtn.onclick = startListening;
 
 if (uploadInput) {
   uploadInput.onchange = async (e) => {
@@ -250,10 +255,32 @@ async function init() {
     )}`;
     sync();
     setInterval(sync, 1000);
+    if (listenerMode) await autoStartListening();
   } catch (e) {
     statusDisplay.innerText = "Erro ao carregar a playlist";
     console.error(e);
   }
+}
+
+// On QR/link open, drop the listener straight into playback. Browsers block
+// autoplay with sound without a gesture, so if playback hasn't actually begun
+// shortly after, we show a full-screen "tap to listen" overlay; the first tap
+// starts it. The overlay is dismissed once audio truly starts ('playing').
+async function autoStartListening() {
+  const overlay = document.getElementById("tap-overlay");
+  if (overlay) {
+    audio.addEventListener("playing", () => {
+      overlay.hidden = true;
+    });
+    overlay.onclick = () => {
+      startListening();
+      overlay.hidden = true;
+    };
+  }
+  startListening();
+  setTimeout(() => {
+    if (overlay && audio.paused) overlay.hidden = false;
+  }, 600);
 }
 
 init();

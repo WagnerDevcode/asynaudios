@@ -202,6 +202,36 @@ body {
   padding: 8px 12px;
 }
 
+.tap-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 1000;
+  background: rgba(9, 9, 11, 0.96);
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  text-align: center;
+}
+
+.tap-overlay[hidden] {
+  display: none;
+}
+
+.tap-overlay:not([hidden]) {
+  display: flex;
+}
+
+.tap-inner i {
+  font-size: 56px;
+  color: var(--accent);
+}
+
+.tap-inner p {
+  margin-top: 18px;
+  font-size: 20px;
+  color: var(--text-main);
+}
+
 /* Player Bar */
 .player-bar {
   grid-column: 1 / 3;
