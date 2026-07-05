@@ -17,9 +17,11 @@ import {
 const MANIFEST_URL = "playlist.json";
 
 let epoch = 0;
-let tracks = [];
+let syncTracks = []; // from playlist.json — drive the shared schedule
+let localTracks = []; // added by the Central on this device only
 let clockOffset = 0; // ms to add to Date.now() to approximate shared time
 let started = false;
+let manualMode = false; // true while playing a click-selected track
 let currentIndex = -1;
 
 const audio = document.getElementById("radio-audio");
@@ -28,6 +30,12 @@ const trackName = document.getElementById("current-track-name");
 const trackTime = document.getElementById("track-time");
 const playlistUl = document.getElementById("playlist");
 const joinBtn = document.getElementById("btn-join");
+const uploadInput = document.getElementById("upload-file");
+
+// Full display list = synced (repo) tracks first, then local additions.
+function allTracks() {
+  return [...syncTracks, ...localTracks];
+}
 
 // Tabs
 document.getElementById("btn-central").onclick = () => switchTab("central");
@@ -42,12 +50,42 @@ function elapsedSeconds() {
 }
 
 function renderPlaylist() {
+  const list = allTracks();
   playlistUl.innerHTML = "";
-  tracks.forEach((t) => {
+  list.forEach((t, i) => {
     const li = document.createElement("li");
-    li.innerHTML = buildPlaylistItemMarkup(t.name);
+    li.innerHTML = buildPlaylistItemMarkup(t.local ? `${t.name} (local)` : t.name);
+    li.onclick = () => playTrack(i);
     playlistUl.appendChild(li);
   });
+}
+
+// Read an audio file's duration (seconds) from its metadata.
+function readDuration(url) {
+  return new Promise((resolve) => {
+    const probe = new Audio();
+    probe.preload = "metadata";
+    probe.onloadedmetadata = () => resolve(probe.duration || 0);
+    probe.onerror = () => resolve(0);
+    probe.src = url;
+  });
+}
+
+// Play a specific track from the display list (manual override of the schedule).
+function playTrack(displayIndex) {
+  const list = allTracks();
+  const track = list[displayIndex];
+  if (!track) return;
+  manualMode = true;
+  started = true;
+  currentIndex = displayIndex;
+  audio.src = track.url;
+  audio.load();
+  audio.play().catch(() => {});
+  trackName.innerText = track.name;
+  highlightCurrent(displayIndex);
+  statusDisplay.innerText = track.local ? "TOCANDO (local)" : "TOCANDO";
+  statusDisplay.className = "status-online";
 }
 
 function highlightCurrent(index) {
@@ -62,15 +100,15 @@ async function loadManifest() {
   clockOffset = clockOffsetFromDate(res.headers.get("date"), Date.now());
   const data = await res.json();
   epoch = data.epoch;
-  tracks = data.tracks || [];
+  syncTracks = data.tracks || [];
   renderPlaylist();
 }
 
 // Align the <audio> element to the schedule. Called on a timer; only reloads
 // the source when the track changes and nudges currentTime when drift is large.
 function sync() {
-  if (!tracks.length) return;
-  const slot = scheduleAt(tracks, elapsedSeconds());
+  if (manualMode || !syncTracks.length) return;
+  const slot = scheduleAt(syncTracks, elapsedSeconds());
   if (!slot) return;
 
   if (slot.index !== currentIndex) {
@@ -97,6 +135,7 @@ function sync() {
 
 joinBtn.onclick = async () => {
   started = true;
+  manualMode = false; // rejoin the shared schedule
   statusDisplay.innerText = "SINCRONIZADO";
   statusDisplay.className = "status-online";
   currentIndex = -1; // force (re)load + play under the user gesture
@@ -108,11 +147,26 @@ joinBtn.onclick = async () => {
   }
 };
 
+if (uploadInput) {
+  uploadInput.onchange = async (e) => {
+    const files = [...e.target.files];
+    for (const file of files) {
+      const url = URL.createObjectURL(file);
+      const duration = await readDuration(url);
+      localTracks.push({ name: file.name, url, duration, local: true });
+    }
+    e.target.value = ""; // allow re-selecting the same file
+    renderPlaylist();
+    // Auto-play the first newly added track for immediate feedback.
+    if (files.length) playTrack(syncTracks.length + localTracks.length - files.length);
+  };
+}
+
 async function init() {
   try {
     await loadManifest();
-    statusDisplay.innerText = `Pronto · ${tracks.length} faixas · loop ${formatTime(
-      totalDuration(tracks),
+    statusDisplay.innerText = `Pronto · ${syncTracks.length} faixas · loop ${formatTime(
+      totalDuration(syncTracks),
     )}`;
     sync();
     setInterval(sync, 1000);

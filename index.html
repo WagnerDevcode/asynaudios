@@ -43,6 +43,17 @@
             tempo — sem servidor. A posição é calculada a partir de um relógio
             compartilhado.
           </p>
+          <div class="upload-area">
+            <label for="upload-file" class="btn-upload">
+              <i class="fas fa-cloud-upload-alt"></i> Adicionar músicas (MP3)
+            </label>
+            <input type="file" id="upload-file" accept="audio/*" multiple hidden />
+            <small class="hint">
+              Arquivos adicionados aqui tocam só neste dispositivo. Para
+              sincronizar com todos os ouvintes, adicione-os ao
+              <code>playlist.json</code> do repositório.
+            </small>
+          </div>
           <div class="playlist-container">
             <h3>Playlist da Estação</h3>
             <ul id="playlist" class="music-list">

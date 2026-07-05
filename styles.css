@@ -108,6 +108,37 @@ body {
   background: #1e1e22;
 }
 
+.music-list li.active {
+  background: rgba(139, 92, 246, 0.18);
+  color: var(--text-main);
+}
+
+/* Upload area */
+.upload-area {
+  margin-top: 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.btn-upload {
+  align-self: flex-start;
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  background: var(--accent);
+  color: #fff;
+  border: none;
+  padding: 10px 18px;
+  border-radius: 20px;
+  cursor: pointer;
+  font-weight: 600;
+}
+
+.btn-upload:hover {
+  filter: brightness(1.1);
+}
+
 /* Player Bar */
 .player-bar {
   grid-column: 1 / 3;
