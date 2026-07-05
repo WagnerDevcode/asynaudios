@@ -36,6 +36,13 @@ const centralAudio = document.getElementById("central-audio");
 const roomInput = document.getElementById("room-code-input");
 const statusDisplay = document.getElementById("status-display");
 
+// Loga o erro e informa o usuário em vez de engoli-lo silenciosamente.
+function reportError(context, err) {
+  console.error(context, err);
+  const detail = err && err.message ? err.message : err;
+  alert(`${context}: ${detail}`);
+}
+
 // alternar painéis
 document.getElementById("btn-central").onclick = () => switchTab("central");
 document.getElementById("btn-ouvinte").onclick = () => switchTab("ouvinte");
@@ -57,6 +64,7 @@ function switchTab(role) {
 const fileInput = document.getElementById("upload-file");
 fileInput.onchange = (e) => {
   const file = e.target.files[0];
+  if (!file) return;
   const room = roomInput.value.toUpperCase();
   if (!room) return alert("Digite o código da sala!");
 
@@ -71,10 +79,15 @@ fileInput.onchange = (e) => {
       const p = (snap.bytesTransferred / snap.totalBytes) * 100;
       document.getElementById("upload-progress-fill").style.width = p + "%";
     },
-    null,
+    (err) => {
+      document.getElementById("progress-wrapper").style.display = "none";
+      reportError("Falha no upload do áudio", err);
+    },
     () => {
       document.getElementById("progress-wrapper").style.display = "none";
-      loadPlaylist(room);
+      loadPlaylist(room).catch((err) =>
+        reportError("Falha ao carregar a playlist", err),
+      );
     },
   );
 };
@@ -84,23 +97,29 @@ async function loadPlaylist(room) {
   const playlistUl = document.getElementById("playlist");
   playlistUl.innerHTML = "";
 
-  try {
-    const res = await listAll(listRef);
-    res.items.forEach(async (item) => {
-      const url = await getDownloadURL(item);
-      const li = document.createElement("li");
-      li.innerHTML = `<span><i class="fas fa-music"></i> ${item.name}</span> <i class="fas fa-play-circle"></i>`;
-      li.onclick = () => {
-        centralAudio.src = url;
-        document.getElementById("current-track-name").innerText = item.name;
-        centralAudio.play();
-        updateTracks(); // Sincroniza nova música com ouvintes
-      };
-      playlistUl.appendChild(li);
-    });
-  } catch (e) {
-    console.error("Erro ao listar musicas", e);
-  }
+  const res = await listAll(listRef);
+  await Promise.all(
+    res.items.map(async (item) => {
+      try {
+        const url = await getDownloadURL(item);
+        const li = document.createElement("li");
+        li.innerHTML = `<span><i class="fas fa-music"></i> ${item.name}</span> <i class="fas fa-play-circle"></i>`;
+        li.onclick = () => {
+          centralAudio.src = url;
+          document.getElementById("current-track-name").innerText = item.name;
+          centralAudio
+            .play()
+            .catch((err) =>
+              reportError("Não foi possível reproduzir o áudio", err),
+            );
+          updateTracks(); // Sincroniza nova música com ouvintes
+        };
+        playlistUl.appendChild(li);
+      } catch (err) {
+        console.error(`Erro ao carregar a música ${item.name}`, err);
+      }
+    }),
+  );
 }
 
 // ---------------------------
@@ -113,17 +132,36 @@ document.getElementById("btn-start-broadcast").onclick = async () => {
   const room = roomInput.value.toUpperCase();
   if (!room) return alert("Código da sala vazio!");
 
-  localStream = centralAudio.captureStream
-    ? centralAudio.captureStream()
-    : centralAudio.mozCaptureStream();
+  const capture = centralAudio.captureStream
+    ? centralAudio.captureStream.bind(centralAudio)
+    : centralAudio.mozCaptureStream
+      ? centralAudio.mozCaptureStream.bind(centralAudio)
+      : null;
+  if (!capture) {
+    return reportError(
+      "Transmissão não suportada",
+      new Error("captureStream indisponível neste navegador"),
+    );
+  }
+
+  try {
+    localStream = capture();
+  } catch (err) {
+    return reportError("Não foi possível capturar o áudio", err);
+  }
+
   statusDisplay.innerText = "LIVE ATIVA";
   statusDisplay.className = "status-online";
 
   onChildAdded(ref(db, `salas/${room}/listeners`), (snap) => {
-    initPeer(snap.key, room);
+    initPeer(snap.key, room).catch((err) =>
+      reportError("Falha ao conectar com um ouvinte", err),
+    );
   });
 
-  loadPlaylist(room);
+  loadPlaylist(room).catch((err) =>
+    reportError("Falha ao carregar a playlist", err),
+  );
 };
 
 async function initPeer(userId, room) {
@@ -137,19 +175,21 @@ async function initPeer(userId, room) {
       set(
         push(ref(db, `salas/${room}/sig/${userId}/c_central`)),
         e.candidate.toJSON(),
-      );
+      ).catch((err) => console.error("Erro ao enviar ICE candidate", err));
   };
 
   const offer = await pc.createOffer();
   await pc.setLocalDescription(offer);
-  set(ref(db, `salas/${room}/sig/${userId}/offer`), {
+  await set(ref(db, `salas/${room}/sig/${userId}/offer`), {
     type: offer.type,
     sdp: offer.sdp,
   });
 
   onValue(ref(db, `salas/${room}/sig/${userId}/answer`), (snap) => {
     if (snap.exists())
-      pc.setRemoteDescription(new RTCSessionDescription(snap.val()));
+      pc.setRemoteDescription(new RTCSessionDescription(snap.val())).catch(
+        (err) => console.error("Erro ao definir descrição remota", err),
+      );
   });
 }
 
@@ -166,6 +206,7 @@ function updateTracks() {
 // ---------------------------
 document.getElementById("btn-connect").onclick = async () => {
   const room = roomInput.value.toUpperCase();
+  if (!room) return alert("Código da sala vazio!");
   const myId = "user_" + Math.floor(Math.random() * 1000);
   const pc = new RTCPeerConnection(rtcConfig);
 
@@ -177,20 +218,27 @@ document.getElementById("btn-connect").onclick = async () => {
       set(
         push(ref(db, `salas/${room}/sig/${myId}/c_ouvinte`)),
         e.candidate.toJSON(),
-      );
+      ).catch((err) => console.error("Erro ao enviar ICE candidate", err));
   };
 
-  await set(ref(db, `salas/${room}/listeners/${myId}`), true);
+  try {
+    await set(ref(db, `salas/${room}/listeners/${myId}`), true);
+  } catch (err) {
+    return reportError("Não foi possível entrar na sala", err);
+  }
 
   onValue(ref(db, `salas/${room}/sig/${myId}/offer`), async (snap) => {
-    if (snap.exists()) {
+    if (!snap.exists()) return;
+    try {
       await pc.setRemoteDescription(new RTCSessionDescription(snap.val()));
       const ans = await pc.createAnswer();
       await pc.setLocalDescription(ans);
-      set(ref(db, `salas/${room}/sig/${myId}/answer`), {
+      await set(ref(db, `salas/${room}/sig/${myId}/answer`), {
         type: ans.type,
         sdp: ans.sdp,
       });
+    } catch (err) {
+      reportError("Falha ao responder à transmissão", err);
     }
   });
 };
