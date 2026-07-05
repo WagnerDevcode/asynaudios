@@ -1,8 +1,8 @@
 {
-  "trackUrl": "assets/tracks/MinhaMusica.mp3",
-  "trackName": "MinhaMusica.mp3",
-  "offset": 0,
-  "at": 1783265505885,
-  "paused": true,
-  "rev": 5
+  "trackUrl": "assets/tracks/track2.mp3",
+  "trackName": "Sinal B (587 Hz)",
+  "offset": 0.59,
+  "at": 1783265535790,
+  "paused": false,
+  "rev": 6
 }
