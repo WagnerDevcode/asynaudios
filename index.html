@@ -3,7 +3,7 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>SyncMusic Pro - Sua Rádio em Tempo Real</title>
+    <title>SyncMusic Pro - Rádio Sincronizada</title>
     <link rel="stylesheet" href="styles.css" />
     <link
       rel="stylesheet"
@@ -26,9 +26,8 @@
           </button>
         </nav>
         <div class="room-info">
-          <label>CÓDIGO DA SALA</label>
-          <input type="text" id="room-code-input" placeholder="EX: FESTA2024" />
-          <p id="status-display" class="status-offline">Offline</p>
+          <label>ESTAÇÃO</label>
+          <p id="status-display" class="status-offline">Carregando…</p>
         </div>
       </aside>
 
@@ -37,30 +36,17 @@
         <!-- Painel Central -->
         <section id="central-panel" class="content-section active">
           <header class="section-header">
-            <h2>Painel de Controle da Central</h2>
-            <div class="upload-btn-wrapper">
-              <button class="btn-upload">
-                <i class="fas fa-cloud-upload-alt"></i> Upload MP3
-              </button>
-              <input type="file" id="upload-file" accept="audio/*" />
-            </div>
+            <h2>Estação Sincronizada</h2>
           </header>
-
-          <div
-            class="progress-container"
-            id="progress-wrapper"
-            style="display: none"
-          >
-            <span>Enviando música...</span>
-            <div class="progress-bar">
-              <div id="upload-progress-fill"></div>
-            </div>
-          </div>
-
+          <p class="hint">
+            Todos os ouvintes tocam a mesma faixa, no mesmo ponto, ao mesmo
+            tempo — sem servidor. A posição é calculada a partir de um relógio
+            compartilhado.
+          </p>
           <div class="playlist-container">
-            <h3>Sua Biblioteca na Nuvem</h3>
+            <h3>Playlist da Estação</h3>
             <ul id="playlist" class="music-list">
-              <li class="empty-msg">Nenhuma música carregada.</li>
+              <li class="empty-msg">Carregando playlist…</li>
             </ul>
           </div>
         </section>
@@ -69,13 +55,9 @@
         <section id="ouvinte-panel" class="content-section">
           <div class="empty-state">
             <i class="fas fa-satellite-dish"></i>
-            <h2>Aguardando Conexão</h2>
-            <p>Insira o código da sala na barra lateral e clique abaixo.</p>
-            <button id="btn-connect" class="btn-main primary">
-              Conectar à Transmissão
-            </button>
+            <h2>Entrar na Transmissão</h2>
+            <p>Clique para sincronizar com a estação em tempo real.</p>
           </div>
-          <audio id="remote-audio" autoplay></audio>
         </section>
       </main>
 
@@ -83,15 +65,15 @@
       <footer class="player-bar">
         <div class="now-playing">
           <div class="track-info">
-            <strong id="current-track-name">Nenhuma música selecionada</strong>
-            <small id="listener-count">0 ouvintes conectados</small>
+            <strong id="current-track-name">Nenhuma faixa</strong>
+            <small id="track-time">0:00 / 0:00</small>
           </div>
         </div>
 
         <div class="player-controls">
-          <audio id="central-audio" controls crossorigin="anonymous"></audio>
-          <button id="btn-start-broadcast" class="btn-broadcast">
-            INICIAR LIVE
+          <audio id="radio-audio" controls></audio>
+          <button id="btn-join" class="btn-broadcast">
+            <i class="fas fa-play"></i> ENTRAR / SINCRONIZAR
           </button>
         </div>
       </footer>

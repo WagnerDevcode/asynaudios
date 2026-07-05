@@ -1,0 +1,8 @@
+{
+  "epoch": 1704067200000,
+  "tracks": [
+    { "name": "Sinal A (440 Hz)", "url": "assets/tracks/track1.mp3", "duration": 30.04 },
+    { "name": "Sinal B (587 Hz)", "url": "assets/tracks/track2.mp3", "duration": 25.05 },
+    { "name": "Sinal C (330 Hz)", "url": "assets/tracks/track3.mp3", "duration": 20.04 }
+  ]
+}

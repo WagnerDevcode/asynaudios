@@ -1,239 +1,125 @@
-import { initializeApp } from "https://www.gstatic.com/firebasejs/10.8.1/firebase-app.js";
 import {
-  getDatabase,
-  ref,
-  set,
-  onValue,
-  push,
-  onChildAdded,
-} from "https://www.gstatic.com/firebasejs/10.8.1/firebase-database.js";
-import {
-  getStorage,
-  ref as sRef,
-  uploadBytesResumable,
-  getDownloadURL,
-  listAll,
-} from "https://www.gstatic.com/firebasejs/10.8.1/firebase-storage.js";
-import {
-  normalizeRoomCode,
-  calcUploadProgress,
-  generateListenerId,
   buildPlaylistItemMarkup,
+  totalDuration,
+  scheduleAt,
+  formatTime,
+  clockOffsetFromDate,
   switchTab,
-  roomStoragePath,
-  listenersPath,
-  listenerPath,
-  signalPath,
 } from "./lib.js";
 
-// CONFIGURAÇÃO DO SEU FIREBASE
-const firebaseConfig = {
-  apiKey: "AIzaSyAF3hKJI1t8NfKvRuWJGf3jFvJtBMICPQY",
-  authDomain: "audiosicronizad.firebaseapp.com",
-  databaseURL: "https://audiosicronizad-default-rtdb.firebaseio.com",
-  projectId: "audiosicronizad",
-  storageBucket: "audiosicronizad.firebasestorage.app",
-  messagingSenderId: "225394954367",
-  appId: "1:225394954367:web:f46491f155dce8415def4a",
-};
+// ---------------------------------------------------------------------------
+// SyncMusic — backend-free synchronized radio.
+// Every client computes the same playback position from a shared clock, so the
+// Central and all Ouvintes hear the same track at the same offset. No server:
+// the playlist and audio files are served statically (e.g. GitHub Pages).
+// ---------------------------------------------------------------------------
 
-const app = initializeApp(firebaseConfig);
-const db = getDatabase(app);
-const storage = getStorage(app);
-const rtcConfig = { iceServers: [{ urls: "stun:stun.l.google.com:19302" }] };
+const MANIFEST_URL = "playlist.json";
 
-// UI Elements
-const centralAudio = document.getElementById("central-audio");
-const roomInput = document.getElementById("room-code-input");
+let epoch = 0;
+let tracks = [];
+let clockOffset = 0; // ms to add to Date.now() to approximate shared time
+let started = false;
+let currentIndex = -1;
+
+const audio = document.getElementById("radio-audio");
 const statusDisplay = document.getElementById("status-display");
+const trackName = document.getElementById("current-track-name");
+const trackTime = document.getElementById("track-time");
+const playlistUl = document.getElementById("playlist");
+const joinBtn = document.getElementById("btn-join");
 
-// alternar painéis
+// Tabs
 document.getElementById("btn-central").onclick = () => switchTab("central");
 document.getElementById("btn-ouvinte").onclick = () => switchTab("ouvinte");
 
-// ---------------------------
-// LOGICA DE UPLOAD E PLAYLIST
-// ---------------------------
-const fileInput = document.getElementById("upload-file");
-fileInput.onchange = (e) => {
-  const file = e.target.files[0];
-  const room = normalizeRoomCode(roomInput.value);
-  if (!room) return alert("Digite o código da sala!");
+function syncedNow() {
+  return Date.now() + clockOffset;
+}
 
-  const sPath = sRef(storage, roomStoragePath(room, file.name));
-  const uploadTask = uploadBytesResumable(sPath, file);
+function elapsedSeconds() {
+  return (syncedNow() - epoch) / 1000;
+}
 
-  document.getElementById("progress-wrapper").style.display = "block";
+function renderPlaylist() {
+  playlistUl.innerHTML = "";
+  tracks.forEach((t) => {
+    const li = document.createElement("li");
+    li.innerHTML = buildPlaylistItemMarkup(t.name);
+    playlistUl.appendChild(li);
+  });
+}
 
-  uploadTask.on(
-    "state_changed",
-    (snap) => {
-      const p = calcUploadProgress(snap.bytesTransferred, snap.totalBytes);
-      document.getElementById("upload-progress-fill").style.width = p + "%";
-    },
-    null,
-    () => {
-      document.getElementById("progress-wrapper").style.display = "none";
-      loadPlaylist(room);
-    },
+function highlightCurrent(index) {
+  [...playlistUl.children].forEach((li, i) =>
+    li.classList.toggle("active", i === index),
   );
+}
+
+async function loadManifest() {
+  const res = await fetch(MANIFEST_URL, { cache: "no-store" });
+  if (!res.ok) throw new Error(`Falha ao carregar playlist (${res.status})`);
+  clockOffset = clockOffsetFromDate(res.headers.get("date"), Date.now());
+  const data = await res.json();
+  epoch = data.epoch;
+  tracks = data.tracks || [];
+  renderPlaylist();
+}
+
+// Align the <audio> element to the schedule. Called on a timer; only reloads
+// the source when the track changes and nudges currentTime when drift is large.
+function sync() {
+  if (!tracks.length) return;
+  const slot = scheduleAt(tracks, elapsedSeconds());
+  if (!slot) return;
+
+  if (slot.index !== currentIndex) {
+    currentIndex = slot.index;
+    audio.src = slot.track.url;
+    audio.load();
+    audio.addEventListener(
+      "loadedmetadata",
+      () => {
+        audio.currentTime = Math.min(slot.offset, audio.duration || slot.offset);
+        if (started) audio.play().catch(() => {});
+      },
+      { once: true },
+    );
+    trackName.innerText = slot.track.name;
+    highlightCurrent(slot.index);
+  } else if (Math.abs(audio.currentTime - slot.offset) > 1.5) {
+    audio.currentTime = slot.offset;
+  }
+
+  const dur = slot.track.duration;
+  trackTime.innerText = `${formatTime(slot.offset)} / ${formatTime(dur)}`;
+}
+
+joinBtn.onclick = async () => {
+  started = true;
+  statusDisplay.innerText = "SINCRONIZADO";
+  statusDisplay.className = "status-online";
+  currentIndex = -1; // force (re)load + play under the user gesture
+  sync();
+  try {
+    await audio.play();
+  } catch {
+    /* will retry on next sync tick */
+  }
 };
 
-async function loadPlaylist(room) {
-  const listRef = sRef(storage, roomStoragePath(room));
-  const playlistUl = document.getElementById("playlist");
-  playlistUl.innerHTML = "";
-
+async function init() {
   try {
-    const res = await listAll(listRef);
-    res.items.forEach(async (item) => {
-      const url = await getDownloadURL(item);
-      const li = document.createElement("li");
-      li.innerHTML = buildPlaylistItemMarkup(item.name);
-      li.onclick = () => {
-        centralAudio.src = url;
-        document.getElementById("current-track-name").innerText = item.name;
-        centralAudio.play();
-        updateTracks(); // Sincroniza nova música com ouvintes
-      };
-      playlistUl.appendChild(li);
-    });
+    await loadManifest();
+    statusDisplay.innerText = `Pronto · ${tracks.length} faixas · loop ${formatTime(
+      totalDuration(tracks),
+    )}`;
+    sync();
+    setInterval(sync, 1000);
   } catch (e) {
-    console.error("Erro ao listar musicas", e);
+    statusDisplay.innerText = "Erro ao carregar a playlist";
+    console.error(e);
   }
 }
 
-// ---------------------------
-// LOGICA DE TRANSMISSÃO (WebRTC)
-// ---------------------------
-let localStream;
-let peers = {};
-
-document.getElementById("btn-start-broadcast").onclick = async () => {
-  const room = normalizeRoomCode(roomInput.value);
-  if (!room) return alert("Código da sala vazio!");
-
-  localStream = centralAudio.captureStream
-    ? centralAudio.captureStream()
-    : centralAudio.mozCaptureStream();
-  statusDisplay.innerText = "LIVE ATIVA";
-  statusDisplay.className = "status-online";
-
-  onChildAdded(ref(db, listenersPath(room)), (snap) => {
-    initPeer(snap.key, room);
-  });
-
-  loadPlaylist(room);
-};
-
-async function initPeer(userId, room) {
-  const pc = new RTCPeerConnection(rtcConfig);
-  peers[userId] = pc;
-
-  const pendingCandidates = [];
-  let remoteReady = false;
-
-  localStream.getTracks().forEach((t) => pc.addTrack(t, localStream));
-
-  pc.onicecandidate = (e) => {
-    if (e.candidate)
-      set(
-        push(ref(db, signalPath(room, userId, "c_central"))),
-        e.candidate.toJSON(),
-      );
-  };
-
-  onChildAdded(ref(db, signalPath(room, userId, "c_ouvinte")), (snap) => {
-    const cand = snap.val();
-    if (!cand) return;
-    if (remoteReady)
-      pc.addIceCandidate(new RTCIceCandidate(cand)).catch(console.error);
-    else pendingCandidates.push(cand);
-  });
-
-  const offer = await pc.createOffer();
-  await pc.setLocalDescription(offer);
-  set(ref(db, signalPath(room, userId, "offer")), {
-    type: offer.type,
-    sdp: offer.sdp,
-  });
-
-  onValue(ref(db, signalPath(room, userId, "answer")), async (snap) => {
-    if (!snap.exists() || remoteReady) return;
-    await pc.setRemoteDescription(new RTCSessionDescription(snap.val()));
-    remoteReady = true;
-    pendingCandidates.forEach((c) =>
-      pc.addIceCandidate(new RTCIceCandidate(c)).catch(console.error),
-    );
-    pendingCandidates.length = 0;
-  });
-}
-
-function updateTracks() {
-  if (!localStream) return;
-  const newTrack = localStream.getAudioTracks()[0];
-  if (!newTrack) return;
-  Object.values(peers).forEach((pc) => {
-    const sender = pc
-      .getSenders()
-      .find((s) => s.track && s.track.kind === "audio");
-    if (sender) sender.replaceTrack(newTrack);
-  });
-}
-
-// ---------------------------
-// LOGICA DO OUVINTE
-// ---------------------------
-document.getElementById("btn-connect").onclick = async () => {
-  const room = normalizeRoomCode(roomInput.value);
-  if (!room) return alert("Código da sala vazio!");
-
-  const myId = generateListenerId();
-  const pc = new RTCPeerConnection(rtcConfig);
-  const remoteAudio = document.getElementById("remote-audio");
-
-  const pendingCandidates = [];
-  let remoteReady = false;
-
-  pc.ontrack = (e) => {
-    remoteAudio.srcObject = e.streams[0];
-    remoteAudio.play().catch(() => {});
-  };
-
-  pc.onicecandidate = (e) => {
-    if (e.candidate)
-      set(
-        push(ref(db, signalPath(room, myId, "c_ouvinte"))),
-        e.candidate.toJSON(),
-      );
-  };
-
-  onChildAdded(ref(db, signalPath(room, myId, "c_central")), (snap) => {
-    const cand = snap.val();
-    if (!cand) return;
-    if (remoteReady)
-      pc.addIceCandidate(new RTCIceCandidate(cand)).catch(console.error);
-    else pendingCandidates.push(cand);
-  });
-
-  await set(ref(db, listenerPath(room, myId)), true);
-
-  onValue(ref(db, signalPath(room, myId, "offer")), async (snap) => {
-    if (!snap.exists() || remoteReady) return;
-    await pc.setRemoteDescription(new RTCSessionDescription(snap.val()));
-    remoteReady = true;
-    pendingCandidates.forEach((c) =>
-      pc.addIceCandidate(new RTCIceCandidate(c)).catch(console.error),
-    );
-    pendingCandidates.length = 0;
-    const ans = await pc.createAnswer();
-    await pc.setLocalDescription(ans);
-    set(ref(db, signalPath(room, myId, "answer")), {
-      type: ans.type,
-      sdp: ans.sdp,
-    });
-
-    statusDisplay.innerText = "CONECTADO";
-    statusDisplay.className = "status-online";
-  });
-};
+init();
