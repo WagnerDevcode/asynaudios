@@ -60,6 +60,31 @@
               <li class="empty-msg">Carregando playlist…</li>
             </ul>
           </div>
+
+          <div class="repo-area">
+            <button id="btn-export" class="btn-secondary">
+              <i class="fas fa-file-code"></i> Gerar playlist.json
+            </button>
+            <small class="hint">
+              Sobe os MP3s em <code>assets/tracks/</code> e cola este JSON em
+              <code>playlist.json</code> no repositório — aí todos os ouvintes
+              tocam sincronizado.
+            </small>
+            <textarea id="export-out" rows="8" readonly hidden></textarea>
+          </div>
+
+          <div class="share-area">
+            <h3>Compartilhar com os ouvintes</h3>
+            <canvas id="qr-canvas" class="qr"></canvas>
+            <div class="share-link">
+              <input id="listener-link" type="text" readonly />
+              <button id="btn-copy-link" class="btn-secondary">Copiar link</button>
+            </div>
+            <small class="hint">
+              O ouvinte escaneia o QR (ou abre o link) e toca exatamente a mesma
+              reprodução da Central.
+            </small>
+          </div>
         </section>
 
         <!-- Painel Ouvinte -->

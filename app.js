@@ -4,8 +4,12 @@ import {
   scheduleAt,
   formatTime,
   clockOffsetFromDate,
+  listenerUrl,
+  roleFromLocation,
+  playlistJson,
   switchTab,
 } from "./lib.js";
+import qrcodegen from "./assets/vendor/qrcodegen.js";
 
 // ---------------------------------------------------------------------------
 // SyncMusic — backend-free synchronized radio.
@@ -31,6 +35,11 @@ const trackTime = document.getElementById("track-time");
 const playlistUl = document.getElementById("playlist");
 const joinBtn = document.getElementById("btn-join");
 const uploadInput = document.getElementById("upload-file");
+const qrCanvas = document.getElementById("qr-canvas");
+const listenerLinkInput = document.getElementById("listener-link");
+const copyLinkBtn = document.getElementById("btn-copy-link");
+const exportBtn = document.getElementById("btn-export");
+const exportOut = document.getElementById("export-out");
 
 // Full display list = synced (repo) tracks first, then local additions.
 function allTracks() {
@@ -162,7 +171,59 @@ if (uploadInput) {
   };
 }
 
+// Render a QR code for `text` onto a canvas (black modules on white).
+function drawQr(canvas, text) {
+  if (!canvas) return;
+  const qr = qrcodegen.QrCode.encodeText(text, qrcodegen.QrCode.Ecc.MEDIUM);
+  const scale = 5;
+  const border = 4;
+  const dim = (qr.size + border * 2) * scale;
+  canvas.width = dim;
+  canvas.height = dim;
+  const ctx = canvas.getContext("2d");
+  ctx.fillStyle = "#ffffff";
+  ctx.fillRect(0, 0, dim, dim);
+  ctx.fillStyle = "#000000";
+  for (let y = 0; y < qr.size; y++) {
+    for (let x = 0; x < qr.size; x++) {
+      if (qr.getModule(x, y)) {
+        ctx.fillRect((x + border) * scale, (y + border) * scale, scale, scale);
+      }
+    }
+  }
+}
+
+// Build the listener link + QR and wire the copy / export controls.
+function setupShare() {
+  const url = listenerUrl(window.location);
+  if (listenerLinkInput) listenerLinkInput.value = url;
+  drawQr(qrCanvas, url);
+
+  if (copyLinkBtn) {
+    copyLinkBtn.onclick = async () => {
+      try {
+        await navigator.clipboard.writeText(url);
+        copyLinkBtn.textContent = "Copiado!";
+        setTimeout(() => (copyLinkBtn.textContent = "Copiar link"), 1500);
+      } catch {
+        listenerLinkInput.select();
+      }
+    };
+  }
+
+  if (exportBtn) {
+    exportBtn.onclick = () => {
+      exportOut.hidden = false;
+      exportOut.value = playlistJson(epoch, allTracks());
+      exportOut.select();
+      navigator.clipboard && navigator.clipboard.writeText(exportOut.value).catch(() => {});
+    };
+  }
+}
+
 async function init() {
+  switchTab(roleFromLocation(window.location));
+  setupShare();
   try {
     await loadManifest();
     statusDisplay.innerText = `Pronto · ${syncTracks.length} faixas · loop ${formatTime(

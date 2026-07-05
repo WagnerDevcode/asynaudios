@@ -4,6 +4,9 @@ import {
   scheduleAt,
   formatTime,
   clockOffsetFromDate,
+  listenerUrl,
+  roleFromLocation,
+  playlistJson,
   switchTab,
 } from "./lib.js";
 
@@ -113,6 +116,53 @@ describe("clockOffsetFromDate", () => {
   it("returns 0 when the header is missing or unparseable", () => {
     expect(clockOffsetFromDate(null, 1000)).toBe(0);
     expect(clockOffsetFromDate("not-a-date", 1000)).toBe(0);
+  });
+});
+
+describe("listenerUrl", () => {
+  it("appends r=ouvinte to the current page path", () => {
+    expect(
+      listenerUrl({ origin: "https://x.github.io", pathname: "/asynaudios/" }),
+    ).toBe("https://x.github.io/asynaudios/?r=ouvinte");
+  });
+
+  it("tolerates a missing/empty location", () => {
+    expect(listenerUrl({})).toBe("?r=ouvinte");
+    expect(listenerUrl(null)).toBe("?r=ouvinte");
+  });
+});
+
+describe("roleFromLocation", () => {
+  it("returns 'ouvinte' when r=ouvinte is present", () => {
+    expect(roleFromLocation({ search: "?r=ouvinte" })).toBe("ouvinte");
+    expect(roleFromLocation({ search: "?foo=1&r=ouvinte" })).toBe("ouvinte");
+  });
+
+  it("defaults to 'central' otherwise", () => {
+    expect(roleFromLocation({ search: "" })).toBe("central");
+    expect(roleFromLocation({ search: "?r=central" })).toBe("central");
+    expect(roleFromLocation(null)).toBe("central");
+  });
+});
+
+describe("playlistJson", () => {
+  it("maps local uploads to repo paths and rounds durations", () => {
+    const json = playlistJson(42, [
+      { name: "A", url: "assets/tracks/a.mp3", duration: 30 },
+      { name: "my song.mp3", url: "blob:xyz", duration: 12.3456, local: true },
+    ]);
+    const parsed = JSON.parse(json);
+    expect(parsed.epoch).toBe(42);
+    expect(parsed.tracks[0].url).toBe("assets/tracks/a.mp3");
+    expect(parsed.tracks[1].url).toBe("assets/tracks/my song.mp3");
+    expect(parsed.tracks[1].duration).toBe(12.35);
+  });
+
+  it("handles missing tracks and missing durations", () => {
+    const parsed = JSON.parse(playlistJson(0, null));
+    expect(parsed.tracks).toEqual([]);
+    const parsed2 = JSON.parse(playlistJson(0, [{ name: "x", url: "x.mp3" }]));
+    expect(parsed2.tracks[0].duration).toBe(0);
   });
 });
 

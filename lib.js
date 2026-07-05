@@ -54,6 +54,37 @@ export function clockOffsetFromDate(dateHeader, localNowMs) {
   return server - localNowMs;
 }
 
+// Build the listener URL from a location-like object: the same page with the
+// `r=ouvinte` query so a scanned QR opens straight into the listener view.
+export function listenerUrl(loc) {
+  const origin = loc && loc.origin ? loc.origin : "";
+  const path = loc && loc.pathname ? loc.pathname : "";
+  return `${origin}${path}?r=ouvinte`;
+}
+
+// Read the role ("central" | "ouvinte") from a location-like object's search
+// string. Defaults to "central".
+export function roleFromLocation(loc) {
+  const search = (loc && loc.search) || "";
+  return /[?&]r=ouvinte\b/.test(search) ? "ouvinte" : "central";
+}
+
+// Serialize tracks into a pretty `playlist.json` string. Local uploads are
+// remapped to their repo path (`assets/tracks/<filename>`) so the Central can
+// commit them and have every listener play them in sync. Durations are rounded
+// to 2 decimals.
+export function playlistJson(epoch, tracks) {
+  const out = {
+    epoch,
+    tracks: (tracks || []).map((t) => ({
+      name: t.name,
+      url: t.local ? `assets/tracks/${t.name}` : t.url,
+      duration: Math.round((t.duration || 0) * 100) / 100,
+    })),
+  };
+  return JSON.stringify(out, null, 2);
+}
+
 // Activate a role tab ("central" / "ouvinte"): toggles the `active` class on
 // the matching nav button and content panel, clearing it from the others.
 export function switchTab(role, doc = document) {
