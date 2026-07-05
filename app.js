@@ -14,6 +14,13 @@ import {
   getDownloadURL,
   listAll,
 } from "https://www.gstatic.com/firebasejs/10.8.1/firebase-storage.js";
+import {
+  normalizeRoomCode,
+  calcUploadProgress,
+  generateListenerId,
+  buildPlaylistItemMarkup,
+  switchTab,
+} from "./lib.js";
 
 // CONFIGURAÇÃO DO SEU FIREBASE
 const firebaseConfig = {
@@ -40,24 +47,13 @@ const statusDisplay = document.getElementById("status-display");
 document.getElementById("btn-central").onclick = () => switchTab("central");
 document.getElementById("btn-ouvinte").onclick = () => switchTab("ouvinte");
 
-function switchTab(role) {
-  document
-    .querySelectorAll(".nav-item")
-    .forEach((b) => b.classList.remove("active"));
-  document
-    .querySelectorAll(".content-section")
-    .forEach((s) => s.classList.remove("active"));
-  document.getElementById(`btn-${role}`).classList.add("active");
-  document.getElementById(`${role}-panel`).classList.add("active");
-}
-
 // ---------------------------
 // LOGICA DE UPLOAD E PLAYLIST
 // ---------------------------
 const fileInput = document.getElementById("upload-file");
 fileInput.onchange = (e) => {
   const file = e.target.files[0];
-  const room = roomInput.value.toUpperCase();
+  const room = normalizeRoomCode(roomInput.value);
   if (!room) return alert("Digite o código da sala!");
 
   const sPath = sRef(storage, `salas/${room}/${file.name}`);
@@ -68,7 +64,7 @@ fileInput.onchange = (e) => {
   uploadTask.on(
     "state_changed",
     (snap) => {
-      const p = (snap.bytesTransferred / snap.totalBytes) * 100;
+      const p = calcUploadProgress(snap.bytesTransferred, snap.totalBytes);
       document.getElementById("upload-progress-fill").style.width = p + "%";
     },
     null,
@@ -89,7 +85,7 @@ async function loadPlaylist(room) {
     res.items.forEach(async (item) => {
       const url = await getDownloadURL(item);
       const li = document.createElement("li");
-      li.innerHTML = `<span><i class="fas fa-music"></i> ${item.name}</span> <i class="fas fa-play-circle"></i>`;
+      li.innerHTML = buildPlaylistItemMarkup(item.name);
       li.onclick = () => {
         centralAudio.src = url;
         document.getElementById("current-track-name").innerText = item.name;
@@ -110,7 +106,7 @@ let localStream;
 let peers = {};
 
 document.getElementById("btn-start-broadcast").onclick = async () => {
-  const room = roomInput.value.toUpperCase();
+  const room = normalizeRoomCode(roomInput.value);
   if (!room) return alert("Código da sala vazio!");
 
   localStream = centralAudio.captureStream
@@ -165,8 +161,8 @@ function updateTracks() {
 // LOGICA DO OUVINTE
 // ---------------------------
 document.getElementById("btn-connect").onclick = async () => {
-  const room = roomInput.value.toUpperCase();
-  const myId = "user_" + Math.floor(Math.random() * 1000);
+  const room = normalizeRoomCode(roomInput.value);
+  const myId = generateListenerId();
   const pc = new RTCPeerConnection(rtcConfig);
 
   pc.ontrack = (e) =>

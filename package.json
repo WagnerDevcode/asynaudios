@@ -1,0 +1,17 @@
+{
+  "name": "asynaudios",
+  "version": "1.0.0",
+  "description": "SyncMusic Pro - real-time synchronized audio broadcasting over Firebase + WebRTC.",
+  "type": "module",
+  "scripts": {
+    "test": "jest",
+    "test:coverage": "jest --coverage"
+  },
+  "license": "ISC",
+  "devDependencies": {
+    "@babel/preset-env": "7.24.7",
+    "babel-jest": "29.7.0",
+    "jest": "29.7.0",
+    "jest-environment-jsdom": "29.7.0"
+  }
+}

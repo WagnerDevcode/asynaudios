@@ -1,0 +1,109 @@
+import {
+  normalizeRoomCode,
+  calcUploadProgress,
+  generateListenerId,
+  buildPlaylistItemMarkup,
+  switchTab,
+} from "./lib.js";
+
+describe("normalizeRoomCode", () => {
+  it("uppercases the room code", () => {
+    expect(normalizeRoomCode("festa2024")).toBe("FESTA2024");
+  });
+
+  it("leaves already-uppercased input unchanged", () => {
+    expect(normalizeRoomCode("ABC")).toBe("ABC");
+  });
+
+  it("returns an empty string for null/undefined", () => {
+    expect(normalizeRoomCode(null)).toBe("");
+    expect(normalizeRoomCode(undefined)).toBe("");
+  });
+
+  it("coerces non-string values to a string", () => {
+    expect(normalizeRoomCode(123)).toBe("123");
+  });
+});
+
+describe("calcUploadProgress", () => {
+  it("computes the percentage transferred", () => {
+    expect(calcUploadProgress(50, 200)).toBe(25);
+  });
+
+  it("returns 100 when fully transferred", () => {
+    expect(calcUploadProgress(200, 200)).toBe(100);
+  });
+
+  it("returns 0 when nothing transferred", () => {
+    expect(calcUploadProgress(0, 200)).toBe(0);
+  });
+
+  it("returns 0 (not NaN/Infinity) when total is zero or missing", () => {
+    expect(calcUploadProgress(10, 0)).toBe(0);
+    expect(calcUploadProgress(10, undefined)).toBe(0);
+    expect(calcUploadProgress(10, -5)).toBe(0);
+  });
+});
+
+describe("generateListenerId", () => {
+  it("prefixes the id with user_", () => {
+    expect(generateListenerId(() => 0.5)).toBe("user_500");
+  });
+
+  it("floors the random value into [0, 999]", () => {
+    expect(generateListenerId(() => 0)).toBe("user_0");
+    expect(generateListenerId(() => 0.9999)).toBe("user_999");
+  });
+
+  it("defaults to Math.random and stays within range", () => {
+    const id = generateListenerId();
+    const n = Number(id.replace("user_", ""));
+    expect(id).toMatch(/^user_\d+$/);
+    expect(n).toBeGreaterThanOrEqual(0);
+    expect(n).toBeLessThanOrEqual(999);
+  });
+});
+
+describe("buildPlaylistItemMarkup", () => {
+  it("embeds the track name with music/play icons", () => {
+    const html = buildPlaylistItemMarkup("song.mp3");
+    expect(html).toContain("song.mp3");
+    expect(html).toContain("fa-music");
+    expect(html).toContain("fa-play-circle");
+  });
+});
+
+describe("switchTab", () => {
+  beforeEach(() => {
+    document.body.innerHTML = `
+      <button id="btn-central" class="nav-item active"></button>
+      <button id="btn-ouvinte" class="nav-item"></button>
+      <section id="central-panel" class="content-section active"></section>
+      <section id="ouvinte-panel" class="content-section"></section>
+    `;
+  });
+
+  it("activates the selected role and deactivates the others", () => {
+    switchTab("ouvinte");
+
+    expect(
+      document.getElementById("btn-ouvinte").classList.contains("active"),
+    ).toBe(true);
+    expect(
+      document.getElementById("ouvinte-panel").classList.contains("active"),
+    ).toBe(true);
+    expect(
+      document.getElementById("btn-central").classList.contains("active"),
+    ).toBe(false);
+    expect(
+      document.getElementById("central-panel").classList.contains("active"),
+    ).toBe(false);
+  });
+
+  it("does not throw when the role has no matching elements", () => {
+    expect(() => switchTab("naoexiste")).not.toThrow();
+    expect(
+      document.querySelectorAll(".nav-item.active").length,
+    ).toBe(0);
+  });
+});
