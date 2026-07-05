@@ -108,6 +108,181 @@ body {
   background: #1e1e22;
 }
 
+.music-list li.active {
+  background: rgba(139, 92, 246, 0.18);
+  color: var(--text-main);
+}
+
+.music-list li span {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.btn-track-del {
+  background: transparent;
+  border: none;
+  color: var(--text-dim, #9a9aa2);
+  cursor: pointer;
+  padding: 4px 8px;
+  border-radius: 6px;
+  opacity: 0;
+  transition: opacity 0.15s ease, color 0.15s ease, background 0.15s ease;
+}
+
+.music-list li:hover .btn-track-del {
+  opacity: 1;
+}
+
+.btn-track-del:hover {
+  color: #ff6b6b;
+  background: rgba(255, 107, 107, 0.12);
+}
+
+/* Upload area */
+.upload-area {
+  margin-top: 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.btn-upload {
+  align-self: flex-start;
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  background: var(--accent);
+  color: #fff;
+  border: none;
+  padding: 10px 18px;
+  border-radius: 20px;
+  cursor: pointer;
+  font-weight: 600;
+}
+
+.btn-upload:hover {
+  filter: brightness(1.1);
+}
+
+.btn-secondary {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  background: transparent;
+  color: var(--text-main);
+  border: 1px solid var(--border);
+  padding: 8px 16px;
+  border-radius: 20px;
+  cursor: pointer;
+}
+
+.btn-secondary:hover {
+  border-color: var(--accent);
+  color: var(--accent);
+}
+
+/* GitHub connection */
+.gh-config {
+  margin-top: 24px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  border-top: 1px solid var(--border);
+  padding-top: 20px;
+}
+
+.gh-fields {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  max-width: 420px;
+}
+
+.gh-fields input {
+  background: #0f0f11;
+  color: var(--text-main);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 9px 12px;
+}
+
+/* Repo export + share areas */
+.repo-area,
+.share-area {
+  margin-top: 28px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  border-top: 1px solid var(--border);
+  padding-top: 20px;
+}
+
+#export-out {
+  width: 100%;
+  background: #0f0f11;
+  color: var(--text-main);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 10px;
+  font-family: monospace;
+  font-size: 12px;
+}
+
+.qr {
+  width: 200px;
+  height: 200px;
+  background: #fff;
+  border-radius: 8px;
+  padding: 8px;
+}
+
+.share-link {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  max-width: 520px;
+}
+
+.listener-link {
+  flex: 1;
+  background: #0f0f11;
+  color: var(--text-dim);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 8px 12px;
+}
+
+.tap-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 1000;
+  background: rgba(9, 9, 11, 0.96);
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  text-align: center;
+}
+
+.tap-overlay[hidden] {
+  display: none;
+}
+
+.tap-overlay:not([hidden]) {
+  display: flex;
+}
+
+.tap-inner i {
+  font-size: 56px;
+  color: var(--accent);
+}
+
+.tap-inner p {
+  margin-top: 18px;
+  font-size: 20px;
+  color: var(--text-main);
+}
+
 /* Player Bar */
 .player-bar {
   grid-column: 1 / 3;
