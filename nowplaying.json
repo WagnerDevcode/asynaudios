@@ -1,8 +1,8 @@
 {
-  "trackUrl": "assets/tracks/track2.mp3",
-  "trackName": "Sinal B (587 Hz)",
-  "offset": 0.59,
-  "at": 1783265535790,
-  "paused": false,
-  "rev": 6
+  "trackUrl": "assets/tracks/track3.mp3",
+  "trackName": "Sinal C (330 Hz)",
+  "offset": 0.08,
+  "at": 1783265561044,
+  "paused": true,
+  "rev": 7
 }
