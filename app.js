@@ -35,11 +35,11 @@ const trackTime = document.getElementById("track-time");
 const playlistUl = document.getElementById("playlist");
 const joinBtn = document.getElementById("btn-join");
 const uploadInput = document.getElementById("upload-file");
-const qrCanvas = document.getElementById("qr-canvas");
-const listenerLinkInput = document.getElementById("listener-link");
-const copyLinkBtn = document.getElementById("btn-copy-link");
 const exportBtn = document.getElementById("btn-export");
 const exportOut = document.getElementById("export-out");
+
+// Listener mode (opened via ?r=ouvinte): playback-only, no interruption controls.
+const listenerMode = roleFromLocation(window.location) === "ouvinte";
 
 // Full display list = synced (repo) tracks first, then local additions.
 function allTracks() {
@@ -193,23 +193,25 @@ function drawQr(canvas, text) {
   }
 }
 
-// Build the listener link + QR and wire the copy / export controls.
+// Build the listener link + QR (rendered into every .qr canvas / link input on
+// both the Central and Ouvinte panels) and wire the copy / export controls.
 function setupShare() {
   const url = listenerUrl(window.location);
-  if (listenerLinkInput) listenerLinkInput.value = url;
-  drawQr(qrCanvas, url);
+  document.querySelectorAll(".qr").forEach((c) => drawQr(c, url));
+  document.querySelectorAll(".listener-link").forEach((i) => (i.value = url));
 
-  if (copyLinkBtn) {
-    copyLinkBtn.onclick = async () => {
+  document.querySelectorAll(".btn-copy-link").forEach((btn) => {
+    btn.onclick = async () => {
       try {
         await navigator.clipboard.writeText(url);
-        copyLinkBtn.textContent = "Copiado!";
-        setTimeout(() => (copyLinkBtn.textContent = "Copiar link"), 1500);
+        btn.textContent = "Copiado!";
+        setTimeout(() => (btn.textContent = "Copiar link"), 1500);
       } catch {
-        listenerLinkInput.select();
+        const input = btn.parentElement.querySelector(".listener-link");
+        if (input) input.select();
       }
     };
-  }
+  });
 
   if (exportBtn) {
     exportBtn.onclick = () => {
@@ -221,8 +223,25 @@ function setupShare() {
   }
 }
 
+// In listener mode the audio is receive-only: hide the native controls (no
+// pause/seek), hide the Central tab, and auto-resume if playback is paused
+// (e.g. via OS media keys) so listeners can only reproduce the Central's stream.
+function applyListenerMode() {
+  if (!listenerMode) return;
+  audio.removeAttribute("controls");
+  const centralBtn = document.getElementById("btn-central");
+  if (centralBtn) centralBtn.style.display = "none";
+  if (joinBtn) joinBtn.innerHTML = '<i class="fas fa-play"></i> OUVIR';
+  audio.addEventListener("pause", () => {
+    if (started && !audio.ended && !audio.seeking && audio.readyState > 2) {
+      audio.play().catch(() => {});
+    }
+  });
+}
+
 async function init() {
   switchTab(roleFromLocation(window.location));
+  applyListenerMode();
   setupShare();
   try {
     await loadManifest();

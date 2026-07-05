@@ -75,10 +75,10 @@
 
           <div class="share-area">
             <h3>Compartilhar com os ouvintes</h3>
-            <canvas id="qr-canvas" class="qr"></canvas>
+            <canvas class="qr"></canvas>
             <div class="share-link">
-              <input id="listener-link" type="text" readonly />
-              <button id="btn-copy-link" class="btn-secondary">Copiar link</button>
+              <input class="listener-link" type="text" readonly />
+              <button class="btn-copy-link btn-secondary">Copiar link</button>
             </div>
             <small class="hint">
               O ouvinte escaneia o QR (ou abre o link) e toca exatamente a mesma
@@ -92,7 +92,23 @@
           <div class="empty-state">
             <i class="fas fa-satellite-dish"></i>
             <h2>Entrar na Transmissão</h2>
-            <p>Clique para sincronizar com a estação em tempo real.</p>
+            <p>
+              Toque para ouvir — você recebe a mesma música da Central, no mesmo
+              ponto, sem controles de interrupção.
+            </p>
+          </div>
+
+          <div class="share-area">
+            <h3>Compartilhar transmissão</h3>
+            <canvas class="qr"></canvas>
+            <div class="share-link">
+              <input class="listener-link" type="text" readonly />
+              <button class="btn-copy-link btn-secondary">Copiar link</button>
+            </div>
+            <small class="hint">
+              Repasse este QR/link: quem acessar entra na mesma transmissão,
+              apenas ouvindo a reprodução da Central.
+            </small>
           </div>
         </section>
       </main>
