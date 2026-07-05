@@ -1,0 +1,16 @@
+rules_version = '2';
+
+// Storage rules for SyncMusic. These lock uploads to the `salas/{room}` tree,
+// enforce an audio-only content type, and cap file size. This is a hardening
+// baseline — for real protection add Firebase Authentication and gate writes
+// on `request.auth != null` (and ideally room ownership).
+service firebase.storage {
+  match /b/{bucket}/o {
+    match /salas/{room}/{fileName} {
+      allow read: if true;
+      allow write: if request.resource.size < 50 * 1024 * 1024
+                   && request.resource.contentType.matches('audio/.*');
+      allow delete: if false;
+    }
+  }
+}

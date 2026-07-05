@@ -54,11 +54,28 @@ function switchTab(role) {
 // ---------------------------
 // LOGICA DE UPLOAD E PLAYLIST
 // ---------------------------
+const MAX_UPLOAD_BYTES = 50 * 1024 * 1024; // 50 MB
+
+// Only allow safe room codes (letters/digits) to avoid path traversal in
+// storage/database references built from user input.
+function sanitizeRoom(value) {
+  return (value || "").toUpperCase().replace(/[^A-Z0-9]/g, "");
+}
+
 const fileInput = document.getElementById("upload-file");
 fileInput.onchange = (e) => {
   const file = e.target.files[0];
-  const room = roomInput.value.toUpperCase();
+  if (!file) return;
+
+  const room = sanitizeRoom(roomInput.value);
   if (!room) return alert("Digite o código da sala!");
+
+  if (!file.type.startsWith("audio/")) {
+    return alert("Apenas arquivos de áudio são permitidos.");
+  }
+  if (file.size > MAX_UPLOAD_BYTES) {
+    return alert("Arquivo muito grande (máximo 50 MB).");
+  }
 
   const sPath = sRef(storage, `salas/${room}/${file.name}`);
   const uploadTask = uploadBytesResumable(sPath, file);
@@ -89,7 +106,20 @@ async function loadPlaylist(room) {
     res.items.forEach(async (item) => {
       const url = await getDownloadURL(item);
       const li = document.createElement("li");
-      li.innerHTML = `<span><i class="fas fa-music"></i> ${item.name}</span> <i class="fas fa-play-circle"></i>`;
+
+      const nameSpan = document.createElement("span");
+      const musicIcon = document.createElement("i");
+      musicIcon.className = "fas fa-music";
+      nameSpan.appendChild(musicIcon);
+      // Use textContent so file names (user-controlled) cannot inject markup.
+      nameSpan.appendChild(document.createTextNode(` ${item.name}`));
+
+      const playIcon = document.createElement("i");
+      playIcon.className = "fas fa-play-circle";
+
+      li.appendChild(nameSpan);
+      li.appendChild(playIcon);
+
       li.onclick = () => {
         centralAudio.src = url;
         document.getElementById("current-track-name").innerText = item.name;
@@ -110,7 +140,7 @@ let localStream;
 let peers = {};
 
 document.getElementById("btn-start-broadcast").onclick = async () => {
-  const room = roomInput.value.toUpperCase();
+  const room = sanitizeRoom(roomInput.value);
   if (!room) return alert("Código da sala vazio!");
 
   localStream = centralAudio.captureStream
@@ -165,7 +195,8 @@ function updateTracks() {
 // LOGICA DO OUVINTE
 // ---------------------------
 document.getElementById("btn-connect").onclick = async () => {
-  const room = roomInput.value.toUpperCase();
+  const room = sanitizeRoom(roomInput.value);
+  if (!room) return alert("Digite o código da sala!");
   const myId = "user_" + Math.floor(Math.random() * 1000);
   const pc = new RTCPeerConnection(rtcConfig);
 
