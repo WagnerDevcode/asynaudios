@@ -15,11 +15,6 @@
       "name": "Sinal C (330 Hz)",
       "url": "assets/tracks/track3.mp3",
       "duration": 20.04
-    },
-    {
-      "name": "MinhaMusica.mp3",
-      "url": "assets/tracks/MinhaMusica.mp3",
-      "duration": 25.05
     }
   ]
 }
