@@ -43,15 +43,33 @@
             tempo — sem servidor. A posição é calculada a partir de um relógio
             compartilhado.
           </p>
+          <div class="gh-config">
+            <h3>Conexão com o GitHub (opcional)</h3>
+            <small class="hint">
+              Cole um token fine-grained com permissão de <em>Contents: r/w</em>
+              só neste repositório. Fica salvo apenas neste navegador — nunca no
+              código. Com ele, as músicas sobem para o repositório e os ouvintes
+              seguem o que a Central toca (atraso de alguns segundos).
+            </small>
+            <div class="gh-fields">
+              <input id="gh-owner" type="text" placeholder="owner (ex.: WagnerDevcode)" />
+              <input id="gh-repo" type="text" placeholder="repo (ex.: asynaudios)" />
+              <input id="gh-branch" type="text" placeholder="branch (ex.: main)" />
+              <input id="gh-token" type="password" placeholder="token (github_pat_…)" autocomplete="off" />
+              <button id="gh-save" class="btn-secondary">Salvar conexão</button>
+            </div>
+            <p id="gh-status" class="hint">Não configurado</p>
+          </div>
+
           <div class="upload-area">
             <label for="upload-file" class="btn-upload">
               <i class="fas fa-cloud-upload-alt"></i> Adicionar músicas (MP3)
             </label>
             <input type="file" id="upload-file" accept="audio/*" multiple hidden />
             <small class="hint">
-              Arquivos adicionados aqui tocam só neste dispositivo. Para
-              sincronizar com todos os ouvintes, adicione-os ao
-              <code>playlist.json</code> do repositório.
+              Com o GitHub configurado, os arquivos sobem para
+              <code>assets/tracks/</code> e entram na transmissão. Sem token,
+              tocam só neste dispositivo.
             </small>
           </div>
           <div class="playlist-container">

@@ -7,6 +7,9 @@ import {
   listenerUrl,
   roleFromLocation,
   playlistJson,
+  remoteOffset,
+  ghContentsApiUrl,
+  buildNowPlaying,
   switchTab,
 } from "./lib.js";
 
@@ -163,6 +166,62 @@ describe("playlistJson", () => {
     expect(parsed.tracks).toEqual([]);
     const parsed2 = JSON.parse(playlistJson(0, [{ name: "x", url: "x.mp3" }]));
     expect(parsed2.tracks[0].duration).toBe(0);
+  });
+});
+
+describe("remoteOffset", () => {
+  it("advances from `at` while playing", () => {
+    const state = { offset: 10, at: 1000, paused: false };
+    expect(remoteOffset(state, 3000)).toBe(12); // +2s
+  });
+
+  it("freezes at the stored offset when paused", () => {
+    const state = { offset: 42, at: 1000, paused: true };
+    expect(remoteOffset(state, 999999)).toBe(42);
+  });
+
+  it("is defensive against missing state/fields", () => {
+    expect(remoteOffset(null, 5000)).toBe(0);
+    expect(remoteOffset({ paused: false }, 5000)).toBe(0);
+  });
+});
+
+describe("ghContentsApiUrl", () => {
+  it("builds the contents URL, pinning the branch when given", () => {
+    expect(ghContentsApiUrl("o", "r", "nowplaying.json", "main")).toBe(
+      "https://api.github.com/repos/o/r/contents/nowplaying.json?ref=main",
+    );
+    expect(ghContentsApiUrl("o", "r", "playlist.json")).toBe(
+      "https://api.github.com/repos/o/r/contents/playlist.json",
+    );
+  });
+});
+
+describe("buildNowPlaying", () => {
+  it("captures the track, rounded offset, time and paused flag", () => {
+    const s = buildNowPlaying(
+      { name: "B", url: "assets/tracks/b.mp3" },
+      12.3456,
+      1700,
+      false,
+      3,
+    );
+    expect(s).toEqual({
+      trackUrl: "assets/tracks/b.mp3",
+      trackName: "B",
+      offset: 12.35,
+      at: 1700,
+      paused: false,
+      rev: 3,
+    });
+  });
+
+  it("tolerates a null track", () => {
+    const s = buildNowPlaying(null, -5, 1, true);
+    expect(s.trackUrl).toBe("");
+    expect(s.offset).toBe(0);
+    expect(s.paused).toBe(true);
+    expect(s.rev).toBe(0);
   });
 });
 

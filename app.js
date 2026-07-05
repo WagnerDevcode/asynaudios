@@ -1,32 +1,41 @@
 import {
   buildPlaylistItemMarkup,
-  totalDuration,
   scheduleAt,
   formatTime,
   clockOffsetFromDate,
   listenerUrl,
   roleFromLocation,
   playlistJson,
+  remoteOffset,
+  ghContentsApiUrl,
+  buildNowPlaying,
   switchTab,
 } from "./lib.js";
 import qrcodegen from "./assets/vendor/qrcodegen.js";
 
 // ---------------------------------------------------------------------------
-// SyncMusic — backend-free synchronized radio.
-// Every client computes the same playback position from a shared clock, so the
-// Central and all Ouvintes hear the same track at the same offset. No server:
-// the playlist and audio files are served statically (e.g. GitHub Pages).
+// SyncMusic — GitHub-backed synchronized radio.
+// The Central controls playback (full media controls) and acts as the trigger:
+// on each action it uploads state to nowplaying.json in the repo. Listeners
+// poll that file and mirror it (playback-only). When no state exists, listeners
+// fall back to a deterministic shared-clock schedule from playlist.json.
 // ---------------------------------------------------------------------------
 
 const MANIFEST_URL = "playlist.json";
+const STATE_URL = "nowplaying.json";
+const POLL_MS = 4000;
+const GH_KEY = "syncmusic_gh";
 
 let epoch = 0;
-let syncTracks = []; // from playlist.json — drive the shared schedule
-let localTracks = []; // added by the Central on this device only
-let clockOffset = 0; // ms to add to Date.now() to approximate shared time
+let syncTracks = []; // from playlist.json (the station library)
+let localTracks = []; // added locally when GitHub isn't configured
+let clockOffset = 0; // ms to add to Date.now() for a shared time reference
 let started = false;
-let manualMode = false; // true while playing a click-selected track
+let manualMode = false; // Central playing a chosen track (skips the fallback loop)
 let currentIndex = -1;
+let rev = 0;
+let remotePaused = false;
+let lastRemoteTrack = "";
 
 const audio = document.getElementById("radio-audio");
 const statusDisplay = document.getElementById("status-display");
@@ -37,11 +46,16 @@ const joinBtn = document.getElementById("btn-join");
 const uploadInput = document.getElementById("upload-file");
 const exportBtn = document.getElementById("btn-export");
 const exportOut = document.getElementById("export-out");
+const ghOwner = document.getElementById("gh-owner");
+const ghRepo = document.getElementById("gh-repo");
+const ghBranch = document.getElementById("gh-branch");
+const ghToken = document.getElementById("gh-token");
+const ghSaveBtn = document.getElementById("gh-save");
+const ghStatus = document.getElementById("gh-status");
 
 // Listener mode (opened via ?r=ouvinte): playback-only, no interruption controls.
 const listenerMode = roleFromLocation(window.location) === "ouvinte";
 
-// Full display list = synced (repo) tracks first, then local additions.
 function allTracks() {
   return [...syncTracks, ...localTracks];
 }
@@ -58,18 +72,159 @@ function elapsedSeconds() {
   return (syncedNow() - epoch) / 1000;
 }
 
+// ---------------------------------------------------------------------------
+// GitHub config (Central only). Stored in this browser's localStorage — never
+// committed. Listeners read public files and don't need a token.
+// ---------------------------------------------------------------------------
+function ghConfig() {
+  try {
+    return JSON.parse(localStorage.getItem(GH_KEY)) || {};
+  } catch {
+    return {};
+  }
+}
+
+function ghConfigured() {
+  const c = ghConfig();
+  return !!(c.owner && c.repo && c.token);
+}
+
+function utf8ToBase64(str) {
+  return btoa(unescape(encodeURIComponent(str)));
+}
+
+function fileToBase64(file) {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => resolve(String(reader.result).split(",")[1]);
+    reader.onerror = reject;
+    reader.readAsDataURL(file);
+  });
+}
+
+async function ghGetFile(path) {
+  const c = ghConfig();
+  const res = await fetch(ghContentsApiUrl(c.owner, c.repo, path, c.branch), {
+    headers: {
+      Authorization: `Bearer ${c.token}`,
+      Accept: "application/vnd.github+json",
+    },
+    cache: "no-store",
+  });
+  if (res.status === 404) return null;
+  if (!res.ok) throw new Error(`GitHub GET ${path}: ${res.status}`);
+  return res.json();
+}
+
+async function ghPutFile(path, base64Content, message, sha) {
+  const c = ghConfig();
+  const body = { message, content: base64Content };
+  if (c.branch) body.branch = c.branch;
+  if (sha) body.sha = sha;
+  const res = await fetch(ghContentsApiUrl(c.owner, c.repo, path), {
+    method: "PUT",
+    headers: {
+      Authorization: `Bearer ${c.token}`,
+      Accept: "application/vnd.github+json",
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify(body),
+  });
+  if (!res.ok) throw new Error(`GitHub PUT ${path}: ${res.status}`);
+  return res.json();
+}
+
+function setGhStatus(text) {
+  if (ghStatus) ghStatus.textContent = text;
+}
+
+function loadGhForm() {
+  const c = ghConfig();
+  if (ghOwner) ghOwner.value = c.owner || "";
+  if (ghRepo) ghRepo.value = c.repo || "";
+  if (ghBranch) ghBranch.value = c.branch || "main";
+  if (ghToken) ghToken.value = c.token || "";
+  setGhStatus(ghConfigured() ? "GitHub configurado" : "Não configurado");
+}
+
+if (ghSaveBtn) {
+  ghSaveBtn.onclick = () => {
+    const cfg = {
+      owner: ghOwner.value.trim(),
+      repo: ghRepo.value.trim(),
+      branch: ghBranch.value.trim() || "main",
+      token: ghToken.value.trim(),
+    };
+    localStorage.setItem(GH_KEY, JSON.stringify(cfg));
+    setGhStatus(ghConfigured() ? "GitHub configurado" : "Preencha todos os campos");
+  };
+}
+
+// ---------------------------------------------------------------------------
+// Central → repo: write the now-playing state (debounced) so listeners follow.
+// ---------------------------------------------------------------------------
+let writeTimer = null;
+let writing = false;
+
+function scheduleStateWrite() {
+  if (listenerMode || !ghConfigured()) return;
+  clearTimeout(writeTimer);
+  writeTimer = setTimeout(writeNowPlaying, 700);
+}
+
+async function writeNowPlaying() {
+  if (writing || !ghConfigured()) return;
+  writing = true;
+  try {
+    const track = allTracks()[currentIndex];
+    rev += 1;
+    const state = buildNowPlaying(
+      track,
+      audio.currentTime,
+      syncedNow(),
+      audio.paused,
+      rev,
+    );
+    const existing = await ghGetFile(STATE_URL);
+    await ghPutFile(
+      STATE_URL,
+      utf8ToBase64(JSON.stringify(state, null, 2)),
+      `nowplaying: ${state.trackName} @ ${Math.round(state.offset)}s`,
+      existing && existing.sha,
+    );
+    setGhStatus(state.paused ? "Pausado (ouvintes seguem)" : "No ar para os ouvintes");
+  } catch (e) {
+    console.error(e);
+    setGhStatus(`Erro ao gravar estado: ${e.message}`);
+  } finally {
+    writing = false;
+  }
+}
+
+async function updatePlaylistFile() {
+  const existing = await ghGetFile(MANIFEST_URL);
+  await ghPutFile(
+    MANIFEST_URL,
+    utf8ToBase64(playlistJson(epoch, syncTracks)),
+    "update playlist.json",
+    existing && existing.sha,
+  );
+}
+
+// ---------------------------------------------------------------------------
+// UI + playback
+// ---------------------------------------------------------------------------
 function renderPlaylist() {
   const list = allTracks();
   playlistUl.innerHTML = "";
   list.forEach((t, i) => {
     const li = document.createElement("li");
     li.innerHTML = buildPlaylistItemMarkup(t.local ? `${t.name} (local)` : t.name);
-    li.onclick = () => playTrack(i);
+    if (!listenerMode) li.onclick = () => playTrack(i);
     playlistUl.appendChild(li);
   });
 }
 
-// Read an audio file's duration (seconds) from its metadata.
 function readDuration(url) {
   return new Promise((resolve) => {
     const probe = new Audio();
@@ -80,7 +235,7 @@ function readDuration(url) {
   });
 }
 
-// Play a specific track from the display list (manual override of the schedule).
+// Central plays a chosen track; the 'play' event triggers the state write.
 function playTrack(displayIndex) {
   const list = allTracks();
   const track = list[displayIndex];
@@ -93,7 +248,7 @@ function playTrack(displayIndex) {
   audio.play().catch(() => {});
   trackName.innerText = track.name;
   highlightCurrent(displayIndex);
-  statusDisplay.innerText = track.local ? "TOCANDO (local)" : "TOCANDO";
+  statusDisplay.innerText = ghConfigured() ? "NO AR" : "TOCANDO (local)";
   statusDisplay.className = "status-online";
 }
 
@@ -104,7 +259,7 @@ function highlightCurrent(index) {
 }
 
 async function loadManifest() {
-  const res = await fetch(MANIFEST_URL, { cache: "no-store" });
+  const res = await fetch(`${MANIFEST_URL}?t=${Date.now()}`, { cache: "no-store" });
   if (!res.ok) throw new Error(`Falha ao carregar playlist (${res.status})`);
   clockOffset = clockOffsetFromDate(res.headers.get("date"), Date.now());
   const data = await res.json();
@@ -113,9 +268,9 @@ async function loadManifest() {
   renderPlaylist();
 }
 
-// Align the <audio> element to the schedule. Called on a timer; only reloads
-// the source when the track changes and nudges currentTime when drift is large.
-function sync() {
+// Deterministic fallback: everyone computes the same position from the shared
+// clock. Used by listeners when no now-playing state exists yet.
+function deterministicSync() {
   if (manualMode || !syncTracks.length) return;
   const slot = scheduleAt(syncTracks, elapsedSeconds());
   if (!slot) return;
@@ -137,20 +292,71 @@ function sync() {
   } else if (Math.abs(audio.currentTime - slot.offset) > 1.5) {
     audio.currentTime = slot.offset;
   }
-
-  const dur = slot.track.duration;
-  trackTime.innerText = `${formatTime(slot.offset)} / ${formatTime(dur)}`;
+  trackTime.innerText = `${formatTime(slot.offset)} / ${formatTime(slot.track.duration)}`;
 }
 
-// Join the shared schedule and start playing. Returns false if the browser
-// blocked autoplay (needs a user gesture).
+// Listener: fetch the Central's state and mirror it. Falls back to the
+// deterministic schedule when the state file is missing.
+async function pollState() {
+  let state = null;
+  try {
+    const res = await fetch(`${STATE_URL}?t=${Date.now()}`, { cache: "no-store" });
+    if (res.ok) state = await res.json();
+  } catch {
+    /* ignore — treated as no state */
+  }
+  if (!state || !state.trackUrl) {
+    deterministicSync();
+    return;
+  }
+  applyRemoteState(state);
+}
+
+function applyRemoteState(state) {
+  manualMode = true; // remote state overrides the deterministic loop
+  remotePaused = !!state.paused;
+  const target = remoteOffset(state, syncedNow());
+
+  if (state.trackUrl !== lastRemoteTrack) {
+    lastRemoteTrack = state.trackUrl;
+    audio.src = state.trackUrl;
+    audio.load();
+    audio.addEventListener(
+      "loadedmetadata",
+      () => {
+        audio.currentTime = Math.min(target, audio.duration || target);
+        if (started && !remotePaused) audio.play().catch(() => {});
+      },
+      { once: true },
+    );
+    trackName.innerText = state.trackName || "";
+  } else if (Math.abs(audio.currentTime - target) > 1.5) {
+    audio.currentTime = target;
+  }
+
+  if (started) {
+    if (remotePaused && !audio.paused) audio.pause();
+    else if (!remotePaused && audio.paused) audio.play().catch(() => {});
+  }
+
+  trackTime.innerText = `${formatTime(target)} / ${formatTime(audio.duration || 0)}`;
+  statusDisplay.innerText = remotePaused ? "PAUSADO (central)" : "AO VIVO (central)";
+  statusDisplay.className = "status-online";
+}
+
+// Start playback (listener join / tap-to-start). Returns false if autoplay was
+// blocked by the browser.
 async function startListening() {
   started = true;
-  manualMode = false; // rejoin the shared schedule
   statusDisplay.innerText = "SINCRONIZADO";
   statusDisplay.className = "status-online";
-  currentIndex = -1; // force (re)load + play
-  sync();
+  if (listenerMode) {
+    await pollState();
+  } else {
+    manualMode = false;
+    currentIndex = -1;
+    deterministicSync();
+  }
   try {
     await audio.play();
     return true;
@@ -159,20 +365,45 @@ async function startListening() {
   }
 }
 
-joinBtn.onclick = startListening;
+joinBtn.onclick = () => {
+  if (listenerMode) return startListening();
+  if (allTracks().length) playTrack(currentIndex >= 0 ? currentIndex : 0);
+  return undefined;
+};
 
 if (uploadInput) {
   uploadInput.onchange = async (e) => {
     const files = [...e.target.files];
     for (const file of files) {
-      const url = URL.createObjectURL(file);
-      const duration = await readDuration(url);
-      localTracks.push({ name: file.name, url, duration, local: true });
+      if (ghConfigured()) {
+        try {
+          setGhStatus(`Enviando ${file.name}…`);
+          const b64 = await fileToBase64(file);
+          const path = `assets/tracks/${file.name}`;
+          const existing = await ghGetFile(path);
+          await ghPutFile(path, b64, `add track ${file.name}`, existing && existing.sha);
+          const duration = await readDuration(URL.createObjectURL(file));
+          syncTracks.push({ name: file.name, url: path, duration });
+          await updatePlaylistFile();
+          setGhStatus(`${file.name} enviada ao repositório`);
+        } catch (err) {
+          console.error(err);
+          setGhStatus(`Erro ao enviar ${file.name}: ${err.message}`);
+        }
+      } else {
+        const url = URL.createObjectURL(file);
+        const duration = await readDuration(url);
+        localTracks.push({ name: file.name, url, duration, local: true });
+      }
     }
-    e.target.value = ""; // allow re-selecting the same file
+    e.target.value = "";
     renderPlaylist();
-    // Auto-play the first newly added track for immediate feedback.
-    if (files.length) playTrack(syncTracks.length + localTracks.length - files.length);
+    if (files.length) {
+      const idx = ghConfigured()
+        ? syncTracks.length - 1
+        : allTracks().length - 1;
+      playTrack(idx);
+    }
   };
 }
 
@@ -223,14 +454,28 @@ function setupShare() {
       exportOut.hidden = false;
       exportOut.value = playlistJson(epoch, allTracks());
       exportOut.select();
-      navigator.clipboard && navigator.clipboard.writeText(exportOut.value).catch(() => {});
+      navigator.clipboard &&
+        navigator.clipboard.writeText(exportOut.value).catch(() => {});
     };
   }
 }
 
+// Central: full media controls act as the trigger — every action writes state.
+function wireCentralControls() {
+  if (listenerMode) return;
+  ["play", "pause", "seeked"].forEach((ev) =>
+    audio.addEventListener(ev, scheduleStateWrite),
+  );
+  audio.addEventListener("ended", () => {
+    const list = allTracks();
+    if (!list.length) return;
+    playTrack((currentIndex + 1) % list.length);
+  });
+}
+
 // In listener mode the audio is receive-only: hide the native controls (no
-// pause/seek), hide the Central tab, and auto-resume if playback is paused
-// (e.g. via OS media keys) so listeners can only reproduce the Central's stream.
+// pause/seek), hide the Central tab, and auto-resume if paused locally — but
+// never override a Central-initiated pause (remotePaused).
 function applyListenerMode() {
   if (!listenerMode) return;
   audio.removeAttribute("controls");
@@ -238,7 +483,13 @@ function applyListenerMode() {
   if (centralBtn) centralBtn.style.display = "none";
   if (joinBtn) joinBtn.innerHTML = '<i class="fas fa-play"></i> OUVIR';
   audio.addEventListener("pause", () => {
-    if (started && !audio.ended && !audio.seeking && audio.readyState > 2) {
+    if (
+      started &&
+      !remotePaused &&
+      !audio.ended &&
+      !audio.seeking &&
+      audio.readyState > 2
+    ) {
       audio.play().catch(() => {});
     }
   });
@@ -248,14 +499,16 @@ async function init() {
   switchTab(roleFromLocation(window.location));
   applyListenerMode();
   setupShare();
+  loadGhForm();
+  wireCentralControls();
   try {
     await loadManifest();
-    statusDisplay.innerText = `Pronto · ${syncTracks.length} faixas · loop ${formatTime(
-      totalDuration(syncTracks),
-    )}`;
-    sync();
-    setInterval(sync, 1000);
-    if (listenerMode) await autoStartListening();
+    statusDisplay.innerText = `Pronto · ${syncTracks.length} faixas`;
+    if (listenerMode) {
+      await pollState();
+      setInterval(pollState, POLL_MS);
+      await autoStartListening();
+    }
   } catch (e) {
     statusDisplay.innerText = "Erro ao carregar a playlist";
     console.error(e);
@@ -263,9 +516,8 @@ async function init() {
 }
 
 // On QR/link open, drop the listener straight into playback. Browsers block
-// autoplay with sound without a gesture, so if playback hasn't actually begun
-// shortly after, we show a full-screen "tap to listen" overlay; the first tap
-// starts it. The overlay is dismissed once audio truly starts ('playing').
+// autoplay with sound without a gesture, so if playback hasn't begun shortly
+// after we show a full-screen "tap to listen" overlay; the first tap starts it.
 async function autoStartListening() {
   const overlay = document.getElementById("tap-overlay");
   if (overlay) {

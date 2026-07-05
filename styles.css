@@ -156,6 +156,31 @@ body {
   color: var(--accent);
 }
 
+/* GitHub connection */
+.gh-config {
+  margin-top: 24px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  border-top: 1px solid var(--border);
+  padding-top: 20px;
+}
+
+.gh-fields {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  max-width: 420px;
+}
+
+.gh-fields input {
+  background: #0f0f11;
+  color: var(--text-main);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 9px 12px;
+}
+
 /* Repo export + share areas */
 .repo-area,
 .share-area {
@@ -193,7 +218,7 @@ body {
   max-width: 520px;
 }
 
-#listener-link {
+.listener-link {
   flex: 1;
   background: #0f0f11;
   color: var(--text-dim);

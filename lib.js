@@ -85,6 +85,36 @@ export function playlistJson(epoch, tracks) {
   return JSON.stringify(out, null, 2);
 }
 
+// Playback offset (seconds) implied by a now-playing state at the given shared
+// time. If paused, the offset is frozen; otherwise it advances from the moment
+// the state was captured (`at`).
+export function remoteOffset(state, syncedNowMs) {
+  if (!state) return 0;
+  const base = typeof state.offset === "number" ? state.offset : 0;
+  if (state.paused) return base;
+  const at = typeof state.at === "number" ? state.at : syncedNowMs;
+  return Math.max(0, base + (syncedNowMs - at) / 1000);
+}
+
+// GitHub Contents API URL for a repo path (optionally pinned to a branch).
+export function ghContentsApiUrl(owner, repo, path, branch) {
+  const base = `https://api.github.com/repos/${owner}/${repo}/contents/${path}`;
+  return branch ? `${base}?ref=${encodeURIComponent(branch)}` : base;
+}
+
+// Build the now-playing broadcast state the Central writes to the repo and the
+// listeners mirror. Offset is clamped/rounded; `at` is the shared-clock time.
+export function buildNowPlaying(track, offset, atMs, paused, rev) {
+  return {
+    trackUrl: track ? track.url : "",
+    trackName: track ? track.name : "",
+    offset: Math.max(0, Math.round((offset || 0) * 100) / 100),
+    at: atMs,
+    paused: !!paused,
+    rev: rev || 0,
+  };
+}
+
 // Activate a role tab ("central" / "ouvinte"): toggles the `active` class on
 // the matching nav button and content panel, clearing it from the others.
 export function switchTab(role, doc = document) {
