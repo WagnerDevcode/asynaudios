@@ -20,6 +20,10 @@ import {
   generateListenerId,
   buildPlaylistItemMarkup,
   switchTab,
+  roomStoragePath,
+  listenersPath,
+  listenerPath,
+  signalPath,
 } from "./lib.js";
 
 // CONFIGURAÇÃO DO SEU FIREBASE
@@ -56,7 +60,7 @@ fileInput.onchange = (e) => {
   const room = normalizeRoomCode(roomInput.value);
   if (!room) return alert("Digite o código da sala!");
 
-  const sPath = sRef(storage, `salas/${room}/${file.name}`);
+  const sPath = sRef(storage, roomStoragePath(room, file.name));
   const uploadTask = uploadBytesResumable(sPath, file);
 
   document.getElementById("progress-wrapper").style.display = "block";
@@ -76,7 +80,7 @@ fileInput.onchange = (e) => {
 };
 
 async function loadPlaylist(room) {
-  const listRef = sRef(storage, `salas/${room}`);
+  const listRef = sRef(storage, roomStoragePath(room));
   const playlistUl = document.getElementById("playlist");
   playlistUl.innerHTML = "";
 
@@ -115,7 +119,7 @@ document.getElementById("btn-start-broadcast").onclick = async () => {
   statusDisplay.innerText = "LIVE ATIVA";
   statusDisplay.className = "status-online";
 
-  onChildAdded(ref(db, `salas/${room}/listeners`), (snap) => {
+  onChildAdded(ref(db, listenersPath(room)), (snap) => {
     initPeer(snap.key, room);
   });
 
@@ -126,33 +130,53 @@ async function initPeer(userId, room) {
   const pc = new RTCPeerConnection(rtcConfig);
   peers[userId] = pc;
 
+  const pendingCandidates = [];
+  let remoteReady = false;
+
   localStream.getTracks().forEach((t) => pc.addTrack(t, localStream));
 
   pc.onicecandidate = (e) => {
     if (e.candidate)
       set(
-        push(ref(db, `salas/${room}/sig/${userId}/c_central`)),
+        push(ref(db, signalPath(room, userId, "c_central"))),
         e.candidate.toJSON(),
       );
   };
 
+  onChildAdded(ref(db, signalPath(room, userId, "c_ouvinte")), (snap) => {
+    const cand = snap.val();
+    if (!cand) return;
+    if (remoteReady)
+      pc.addIceCandidate(new RTCIceCandidate(cand)).catch(console.error);
+    else pendingCandidates.push(cand);
+  });
+
   const offer = await pc.createOffer();
   await pc.setLocalDescription(offer);
-  set(ref(db, `salas/${room}/sig/${userId}/offer`), {
+  set(ref(db, signalPath(room, userId, "offer")), {
     type: offer.type,
     sdp: offer.sdp,
   });
 
-  onValue(ref(db, `salas/${room}/sig/${userId}/answer`), (snap) => {
-    if (snap.exists())
-      pc.setRemoteDescription(new RTCSessionDescription(snap.val()));
+  onValue(ref(db, signalPath(room, userId, "answer")), async (snap) => {
+    if (!snap.exists() || remoteReady) return;
+    await pc.setRemoteDescription(new RTCSessionDescription(snap.val()));
+    remoteReady = true;
+    pendingCandidates.forEach((c) =>
+      pc.addIceCandidate(new RTCIceCandidate(c)).catch(console.error),
+    );
+    pendingCandidates.length = 0;
   });
 }
 
 function updateTracks() {
+  if (!localStream) return;
   const newTrack = localStream.getAudioTracks()[0];
+  if (!newTrack) return;
   Object.values(peers).forEach((pc) => {
-    const sender = pc.getSenders().find((s) => s.track.kind === "audio");
+    const sender = pc
+      .getSenders()
+      .find((s) => s.track && s.track.kind === "audio");
     if (sender) sender.replaceTrack(newTrack);
   });
 }
@@ -162,31 +186,54 @@ function updateTracks() {
 // ---------------------------
 document.getElementById("btn-connect").onclick = async () => {
   const room = normalizeRoomCode(roomInput.value);
+  if (!room) return alert("Código da sala vazio!");
+
   const myId = generateListenerId();
   const pc = new RTCPeerConnection(rtcConfig);
+  const remoteAudio = document.getElementById("remote-audio");
 
-  pc.ontrack = (e) =>
-    (document.getElementById("remote-audio").srcObject = e.streams[0]);
+  const pendingCandidates = [];
+  let remoteReady = false;
+
+  pc.ontrack = (e) => {
+    remoteAudio.srcObject = e.streams[0];
+    remoteAudio.play().catch(() => {});
+  };
 
   pc.onicecandidate = (e) => {
     if (e.candidate)
       set(
-        push(ref(db, `salas/${room}/sig/${myId}/c_ouvinte`)),
+        push(ref(db, signalPath(room, myId, "c_ouvinte"))),
         e.candidate.toJSON(),
       );
   };
 
-  await set(ref(db, `salas/${room}/listeners/${myId}`), true);
+  onChildAdded(ref(db, signalPath(room, myId, "c_central")), (snap) => {
+    const cand = snap.val();
+    if (!cand) return;
+    if (remoteReady)
+      pc.addIceCandidate(new RTCIceCandidate(cand)).catch(console.error);
+    else pendingCandidates.push(cand);
+  });
 
-  onValue(ref(db, `salas/${room}/sig/${myId}/offer`), async (snap) => {
-    if (snap.exists()) {
-      await pc.setRemoteDescription(new RTCSessionDescription(snap.val()));
-      const ans = await pc.createAnswer();
-      await pc.setLocalDescription(ans);
-      set(ref(db, `salas/${room}/sig/${myId}/answer`), {
-        type: ans.type,
-        sdp: ans.sdp,
-      });
-    }
+  await set(ref(db, listenerPath(room, myId)), true);
+
+  onValue(ref(db, signalPath(room, myId, "offer")), async (snap) => {
+    if (!snap.exists() || remoteReady) return;
+    await pc.setRemoteDescription(new RTCSessionDescription(snap.val()));
+    remoteReady = true;
+    pendingCandidates.forEach((c) =>
+      pc.addIceCandidate(new RTCIceCandidate(c)).catch(console.error),
+    );
+    pendingCandidates.length = 0;
+    const ans = await pc.createAnswer();
+    await pc.setLocalDescription(ans);
+    set(ref(db, signalPath(room, myId, "answer")), {
+      type: ans.type,
+      sdp: ans.sdp,
+    });
+
+    statusDisplay.innerText = "CONECTADO";
+    statusDisplay.className = "status-online";
   });
 };

@@ -4,6 +4,10 @@ import {
   generateListenerId,
   buildPlaylistItemMarkup,
   switchTab,
+  roomStoragePath,
+  listenersPath,
+  listenerPath,
+  signalPath,
 } from "./lib.js";
 
 describe("normalizeRoomCode", () => {
@@ -70,6 +74,35 @@ describe("buildPlaylistItemMarkup", () => {
     expect(html).toContain("song.mp3");
     expect(html).toContain("fa-music");
     expect(html).toContain("fa-play-circle");
+  });
+});
+
+describe("firebase path builders", () => {
+  it("roomStoragePath builds room and file paths", () => {
+    expect(roomStoragePath("FESTA")).toBe("salas/FESTA");
+    expect(roomStoragePath("FESTA", "song.mp3")).toBe("salas/FESTA/song.mp3");
+  });
+
+  it("listenersPath / listenerPath build the listener paths", () => {
+    expect(listenersPath("FESTA")).toBe("salas/FESTA/listeners");
+    expect(listenerPath("FESTA", "user_5")).toBe(
+      "salas/FESTA/listeners/user_5",
+    );
+  });
+
+  it("signalPath builds each signaling channel path", () => {
+    expect(signalPath("FESTA", "user_5", "offer")).toBe(
+      "salas/FESTA/sig/user_5/offer",
+    );
+    expect(signalPath("FESTA", "user_5", "answer")).toBe(
+      "salas/FESTA/sig/user_5/answer",
+    );
+    expect(signalPath("FESTA", "user_5", "c_central")).toBe(
+      "salas/FESTA/sig/user_5/c_central",
+    );
+    expect(signalPath("FESTA", "user_5", "c_ouvinte")).toBe(
+      "salas/FESTA/sig/user_5/c_ouvinte",
+    );
   });
 });
 

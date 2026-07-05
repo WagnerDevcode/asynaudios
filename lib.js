@@ -26,6 +26,25 @@ export function buildPlaylistItemMarkup(name) {
   return `<span><i class="fas fa-music"></i> ${name}</span> <i class="fas fa-play-circle"></i>`;
 }
 
+// Firebase path builders — centralized so the central and listener sides agree
+// on where rooms, listeners and WebRTC signaling data live.
+export function roomStoragePath(room, fileName) {
+  return fileName ? `salas/${room}/${fileName}` : `salas/${room}`;
+}
+
+export function listenersPath(room) {
+  return `salas/${room}/listeners`;
+}
+
+export function listenerPath(room, userId) {
+  return `salas/${room}/listeners/${userId}`;
+}
+
+// Signaling channel path: channel is "offer" | "answer" | "c_central" | "c_ouvinte".
+export function signalPath(room, userId, channel) {
+  return `salas/${room}/sig/${userId}/${channel}`;
+}
+
 // Activate a role tab ("central" / "ouvinte"): toggles the `active` class on
 // the matching nav button and content panel, clearing it from the others.
 export function switchTab(role, doc = document) {
